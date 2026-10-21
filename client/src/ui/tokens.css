@@ -1,0 +1,95 @@
+@font-face {
+  font-family: Kostar;
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/Kostar.ttf?v=2") format("truetype");
+}
+
+@font-face {
+  font-family: Kostar;
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/Kostar.ttf?v=2") format("truetype");
+}
+
+:root {
+  color-scheme: dark;
+  /* 전장·메뉴 배경. 앰버 카드 대신 깊은 우주색 */
+  --bg: #05070a;
+  --bg-elev: #1a222a;
+  --bg-field: #070b10;
+  /* 본문. 형광은 라벨·와이어에만 쓰고, 문장은 밝은 녹회색으로 대비를 맞춘다 */
+  --ink: #e4f0dc;
+  --ink-dim: #93a394;
+  --ink-faint: #5e6b60;
+  --line: rgba(158, 184, 168, 0.22);
+  --line-strong: rgba(125, 255, 74, 0.72);
+  /* 커맨드 카드 와이어 · 메뉴 라벨 */
+  --phosphor: #7dff4a;
+  --phosphor-text: #d6ffb0;
+  --phosphor-deep: #102214;
+  /* 패치 1.04 이후 자원 숫자 */
+  --res: #c6f56a;
+  --mineral: #49c8ee;
+  --gas: #3dce55;
+  --hp: #3ad63a;
+  --hp-low: #e23a32;
+  --danger: #ff4a3a;
+  --metal-face: #323e4a;
+  --metal-hi: #9aafbf;
+  --metal-lo: #0c1218;
+  --plate: #323e4a;
+  --bevel-raised:
+    inset 1px 1px 0 var(--metal-hi),
+    inset -1px -1px 0 var(--metal-lo),
+    inset 0 0 0 1px #1a242c;
+  --bevel-pressed:
+    inset 1px 1px 0 #0c1014,
+    inset -1px -1px 0 #6d7e8c;
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --font-display: "Kostar", sans-serif;
+  --font-body: "Kostar", sans-serif;
+  --btn-bg: #000000;
+  --btn-ink: var(--phosphor);
+  --btn-edge: var(--phosphor);
+  --btn-active: var(--phosphor-text);
+  --btn-ink-muted: rgba(125, 255, 74, 0.35);
+  --btn-edge-muted: rgba(125, 255, 74, 0.28);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius: 0px;
+  --dur-fast: 80ms;
+  --dur: 160ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* 인간 = 강철/구리, 괴물 = 보라 생체, 외계인 = 금색 */
+  --faction: #d08a45;
+  --faction-ink: #ffe0c2;
+  --faction-lip: #e0a060;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.stage[data-race="human"] {
+  --faction: #d08a45;
+  --faction-ink: #ffe0c2;
+  --faction-lip: #e0a060;
+}
+
+.stage[data-race="monster"] {
+  --faction: #c084f0;
+  --faction-ink: #f3e6ff;
+  --faction-lip: #8a3ec4;
+}
+
+.stage[data-race="alien"] {
+  --faction: #e6c15a;
+  --faction-ink: #fff4d0;
+  --faction-lip: #c9a24a;
+}

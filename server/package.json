@@ -1,0 +1,16 @@
+{
+  "name": "starfront-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=neutral --format=cjs --outfile=modules/index.js --keep-names --alias:@shared=../shared",
+    "watch": "esbuild src/main.ts --bundle --platform=neutral --format=cjs --outfile=modules/index.js --keep-names --alias:@shared=../shared --watch",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f nakama"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2"
+  }
+}
