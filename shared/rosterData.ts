@@ -63,7 +63,7 @@ export const UNIT_ROWS: UnitRow[] = [
     typeId: "human_worker",
     name: "건설로봇",
     race: "human",
-    producedAt: ["hq"],
+    producedAt: ["hq", "human_hq"],
     scSec: 12.6,
     larva: false,
   },
@@ -131,7 +131,7 @@ export const UNIT_ROWS: UnitRow[] = [
     typeId: "alien_worker",
     name: "탐사정",
     race: "alien",
-    producedAt: ["hq"],
+    producedAt: ["hq", "alien_hq"],
     scSec: 12.6,
     larva: false,
   },
@@ -157,6 +157,18 @@ export const UNIT_ROWS: UnitRow[] = [
 /** w/d = 스타1 가로(폭) 기준의 정사각(1:1). 예: 병영·관문 4×4, 보급고 3×3, 수정탑 2×2.
  *  사령부·미네랄·에테르는 기존 6×6 / 3×3. */
 export const BUILDING_ROWS: BuildingRow[] = [
+  {
+    typeId: "human_hq",
+    name: "사령부",
+    race: "human",
+    // 시작 HQ(human_hq)와 동일: FOOTPRINT.hq 6×6, HQ.maxHp 3000
+    w: 6,
+    d: 6,
+    hp: 3000,
+    method: "worker",
+    role: "produce",
+    scSec: 50.4,
+  },
   {
     typeId: "human_barracks",
     name: "병영",
@@ -247,6 +259,18 @@ export const BUILDING_ROWS: BuildingRow[] = [
     method: "morph",
     role: "gas",
     scSec: 25.2,
+  },
+  {
+    typeId: "alien_hq",
+    name: "연결체",
+    race: "alien",
+    // 시작 HQ(alien_hq)와 동일: FOOTPRINT.hq 6×6, HQ.maxHp 3000
+    w: 6,
+    d: 6,
+    hp: 3000,
+    method: "warp",
+    role: "produce",
+    scSec: 44.1,
   },
   {
     typeId: "alien_gate",

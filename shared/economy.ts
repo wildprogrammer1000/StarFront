@@ -35,6 +35,10 @@ export const SC_MINERAL_RATIO = {
   spawning_pool: 4,
   /** SC Hatchery 300 — 추가 부화장(monster_hatch) */
   hatchery: 6,
+  /** SC Command Center 400 — 추가 사령부(human_hq) */
+  command_center: 8,
+  /** SC Nexus 400 — 추가 연결체(alien_hq) */
+  nexus: 8,
   /** SC Hydralisk Den 100 */
   hydralisk_den: 2,
   gateway: 3,
@@ -67,6 +71,8 @@ export const SC_GAS_RATIO = {
   academy: 0,
   spawning_pool: 0,
   hatchery: 0,
+  command_center: 0,
+  nexus: 0,
   hydralisk_den: 1,
   gateway: 0,
   cybernetics_core: 0,
@@ -135,6 +141,14 @@ export const BUILDING_COST: Record<string, ResourceCost> = {
   monster_hatch: {
     costM: mineralOf(SC_MINERAL_RATIO.hatchery),
     costE: gasOf(SC_GAS_RATIO.hatchery),
+  },
+  human_hq: {
+    costM: mineralOf(SC_MINERAL_RATIO.command_center),
+    costE: gasOf(SC_GAS_RATIO.command_center),
+  },
+  alien_hq: {
+    costM: mineralOf(SC_MINERAL_RATIO.nexus),
+    costE: gasOf(SC_GAS_RATIO.nexus),
   },
   alien_gate: {
     costM: mineralOf(SC_MINERAL_RATIO.gateway),

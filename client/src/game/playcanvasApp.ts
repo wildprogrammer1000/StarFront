@@ -384,9 +384,9 @@ export function createPlayCanvasApp(
     while (ghostCellPads.length <= i) {
       const pad = createBox(
         `ghost-cell-${ghostCellPads.length}`,
-        CELL * 0.92,
+        CELL,
         0.05,
-        CELL * 0.92,
+        CELL,
         GHOST_OK,
         0.6
       );
@@ -472,7 +472,8 @@ export function createPlayCanvasApp(
         const p = pads[i];
         const pv = toView(p.x, p.z);
         pad.enabled = true;
-        pad.setLocalScale(CELL * 0.92, 0.05, CELL * 0.92);
+        // 격자 틈 없이 칸을 붙여 발자국이 하나로 보이게 한다.
+        pad.setLocalScale(CELL, 0.05, CELL);
         pad.setPosition(pv.x, GROUND_Y + 0.04, pv.z);
         paint(pad, ghostToneColor(p.tone));
         app.root.addChild(pad);

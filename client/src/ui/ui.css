@@ -229,23 +229,30 @@ button:disabled {
 }
 
 .stage-bottom-ui-slot {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .sel-card {
   display: flex;
   align-items: stretch;
-  gap: 8px;
-  height: auto;
-  min-height: 64px;
-  padding: 2px 8px;
+  gap: 0;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
   pointer-events: auto;
 }
 
 .sel-card.has-prod {
-  height: auto;
-  min-height: 64px;
-  padding: 4px 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
   align-items: stretch;
 }
 
@@ -379,25 +386,34 @@ button:disabled {
 }
 
 .sel-card.is-multi {
-  height: auto;
-  min-height: 64px;
+  height: 100%;
+  min-height: 0;
   align-items: stretch;
-  padding: 2px 8px;
+  padding: 0;
 }
 
 .sel-multi-grid {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(5, 34px);
-  grid-template-rows: repeat(2, 34px);
-  gap: 3px;
-  flex: none;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 0;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: 5 / 2;
+  max-height: 100%;
 }
 
 .sel-multi-cell {
+  box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   padding: 0;
   margin: 0;
   background-color: #000;
@@ -406,6 +422,7 @@ button:disabled {
   overflow: hidden;
   color: inherit;
   font: inherit;
+  border-radius: 0;
 }
 
 button.sel-multi-cell.is-pick {
@@ -430,15 +447,27 @@ button.sel-multi-cell.is-pick:focus-visible {
 }
 
 .sel-multi-sprite {
-  width: 30px;
-  height: 30px;
+  width: 78%;
+  height: 78%;
+  max-width: 48px;
+  max-height: 48px;
   object-fit: contain;
   pointer-events: none;
 }
 
 .sel-multi-cell .sel-outline-fill {
-  width: 30px;
-  height: 30px;
+  width: 78%;
+  height: 78%;
+  max-width: 48px;
+  max-height: 48px;
+}
+
+.sel-card.is-multi .sel-info {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 100%;
+  align-items: stretch;
 }
 
 .sel-actions {
@@ -456,8 +485,34 @@ button.sel-multi-cell.is-pick:focus-visible {
   padding: 0;
 }
 
+.sel-card.is-multi .sel-actions {
+  flex: 0 0 auto;
+  width: auto;
+  height: 100%;
+  grid-template-columns: repeat(2, calc(var(--stage-bottom-h) / 2));
+  grid-auto-rows: calc(var(--stage-bottom-h) / 2);
+  gap: 0;
+  align-content: stretch;
+}
+
 .sel-actions.is-single > .sel-unit-btn {
   grid-column: 2;
+}
+
+.sel-card.is-multi .cmd-btn.sf-btn.sel-unit-btn {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+.sel-card.is-multi .cmd-btn.sf-btn.sel-unit-btn .cmd-sprite {
+  width: 72%;
+  height: 72%;
+  max-width: 48px;
+  max-height: 48px;
 }
 
 .sel-unit-btn {
@@ -813,26 +868,59 @@ button.sel-multi-cell.is-pick:focus-visible {
 }
 
 .cmd-bar.is-build-list {
-  height: auto;
-  min-height: 64px;
-  padding: 2px 8px;
-  align-items: center;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
 }
 
 .cmd-bar.is-build-list .cmd-scroll {
   order: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   display: grid;
-  grid-template-rows: repeat(2, 40px);
+  grid-template-rows: 1fr 1fr;
   grid-auto-flow: column;
-  grid-auto-columns: 40px;
-  gap: 4px;
-  align-content: center;
+  /* 하단 UI 높이 기준 정사각 셀 */
+  grid-auto-columns: calc(var(--stage-bottom-h) / 2);
+  gap: 0;
+  align-content: stretch;
+  padding: 0;
+}
+
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn .cmd-sprite {
+  width: 72%;
+  height: 72%;
+  max-width: 48px;
+  max-height: 48px;
 }
 
 .cmd-bar.is-build-list .cmd-back {
   order: 1;
-  margin-left: auto;
-  align-self: center;
+  box-sizing: border-box;
+  flex: 0 0 calc(var(--stage-bottom-h) / 2);
+  width: calc(var(--stage-bottom-h) / 2);
+  height: 100%;
+  min-height: 0;
+  margin-left: 0;
+  align-self: stretch;
+  border-radius: 0;
 }
 
 .cmd-scroll {

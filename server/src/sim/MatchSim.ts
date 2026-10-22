@@ -2369,15 +2369,16 @@ function tickUnitOrders(sim: MatchSim): void {
     clearOrder(e);
     replaceEntity(sim, e);
   });
+  let structureLost = false;
   for (let i = 0; i < dead.length; i++) {
     const id = dead[i];
     const killed = sim.entities[id];
     if (!killed) continue;
-    if (killed.kind === "hq") {
-      endByHqDestroy(sim, killed.side);
-    }
+    if (isStructure(killed)) structureLost = true;
     delete sim.entities[id];
   }
+  // 스타1 밀리: 건물이 하나도 없으면 패배 (유닛만으로는 유지 불가)
+  if (structureLost) checkElimination(sim);
 }
 
 function findHq(sim: MatchSim, side: Side): SimEntity | null {
@@ -2873,9 +2874,29 @@ function attackAim(sim: MatchSim, e: SimEntity): { x: number; z: number } | null
   return { x: target.x, z: target.z };
 }
 
-function endByHqDestroy(sim: MatchSim, destroyedSide: Side): void {
+/** 사령부·일반 건물. 건설 중도 포함 (스타1과 동일). */
+function isStructure(e: SimEntity): boolean {
+  return e.kind === "hq" || e.kind === "building";
+}
+
+function sideHasStructure(sim: MatchSim, side: Side): boolean {
+  let found = false;
+  eachEntity(sim.entities, function (e) {
+    if (found) return;
+    if (e.side === side && isStructure(e)) found = true;
+  });
+  return found;
+}
+
+/** 양측 건물이 같은 틱에 소진되면 무승부. */
+function checkElimination(sim: MatchSim): void {
+  if (sim.status === "ended") return;
+  const bottomOut = !sideHasStructure(sim, "bottom");
+  const topOut = !sideHasStructure(sim, "top");
+  if (!bottomOut && !topOut) return;
   sim.status = "ended";
-  sim.winnerSide = destroyedSide === "bottom" ? "top" : "bottom";
+  if (bottomOut && topOut) sim.winnerSide = "draw";
+  else sim.winnerSide = bottomOut ? "top" : "bottom";
 }
 
 function tickConstruction(sim: MatchSim): void {
