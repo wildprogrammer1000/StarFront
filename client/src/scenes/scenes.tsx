@@ -94,10 +94,12 @@ export function GameScene({
     const slot = bottomSlot;
     if (!shell || !slot) return;
     const apply = () => {
-      const base =
-        parseFloat(getComputedStyle(shell).getPropertyValue("--stage-bottom-h")) || 112;
+      const style = getComputedStyle(shell);
+      const base = parseFloat(style.getPropertyValue("--stage-bottom-h")) || 112;
+      const safe = parseFloat(style.paddingBottom) || 0;
+      const border = parseFloat(style.borderTopWidth) || 0;
       const content = slot.offsetHeight;
-      const next = Math.max(base, content);
+      const next = Math.max(base, content) + safe + border;
       shell.style.height = `${next}px`;
       shell.style.flexBasis = `${next}px`;
     };

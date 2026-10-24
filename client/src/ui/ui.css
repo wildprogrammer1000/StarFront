@@ -212,13 +212,16 @@ button:disabled {
   pointer-events: none;
 }
 
-/* 하단 UI. 기본 112px. 내용이 더 크면 그만큼 늘어난다. */
+/* 하단 UI. 기본 112px. 내용이 더 크면 그만큼 늘어난다.
+ * safe는 홈 인디케이터 영역. 조작 칸 높이는 그대로 두고 아래에 붙인다. */
 .stage-bottom-ui {
   --stage-bottom-h: 112px;
+  --stage-bottom-safe: env(safe-area-inset-bottom, 0px);
   /* border-top 1px는 바깥으로 빼서 내용 높이를 112px로 유지한다. */
-  flex: 0 0 calc(var(--stage-bottom-h) + 1px);
-  height: calc(var(--stage-bottom-h) + 1px);
-  min-height: calc(var(--stage-bottom-h) + 1px);
+  flex: 0 0 calc(var(--stage-bottom-h) + var(--stage-bottom-safe) + 1px);
+  height: calc(var(--stage-bottom-h) + var(--stage-bottom-safe) + 1px);
+  min-height: calc(var(--stage-bottom-h) + var(--stage-bottom-safe) + 1px);
+  padding-bottom: var(--stage-bottom-safe);
   max-height: none;
   overflow: hidden;
   pointer-events: auto;
@@ -1017,7 +1020,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   padding:
     max(12px, env(safe-area-inset-top))
     12px
-    14px;
+    max(14px, env(safe-area-inset-bottom));
 }
 
 .screen-fill {
