@@ -4,6 +4,7 @@ import {
   fogRevealsEntity,
   resetFog,
   syncFog,
+  viewToFogCell,
   writeFogRgba,
 } from "./fog";
 import {
@@ -549,6 +550,11 @@ export function createPlayCanvasApp(
   }
 
   const entityMap = new Map<string, pc.Entity>();
+  /** 아군 시야 제공자의 안개 칸. 칸이 바뀔 때만 안개를 다시 칠한다. */
+  const fogCell = new Map<string, number>();
+  let prevSnapAt = 0;
+  /** 스냅샷 적용 중에만 선택·경로를 루트 맨 뒤로 올린다. */
+  let overlayReorder = false;
   const spriteMats = new Map<string, pc.StandardMaterial>();
   let lastEntities: EntitySnap[] = [];
   /** 스프라이트 상단(로컬 +Z)이 전방. 이동·조준 방향과 맞춘다. */
@@ -570,7 +576,6 @@ export function createPlayCanvasApp(
       duration: number;
     }
   >();
-  const INTERP_SEC = 0.1;
   const spriteEntityIds = new Set<string>();
   /** 엔티티 typeId 변경(유충→알) 시 스프라이트 재생성용 */
   const entityTypeIds = new Map<string, string>();
@@ -851,7 +856,7 @@ export function createPlayCanvasApp(
       }
     });
     if (selectedIds.length) updateSelectionVisual();
-    updateMovePathVisuals();
+    else updateMovePathVisuals();
     tickWalkAnims(now);
     tickDieBursts(now);
     tickMarkerAnims(step);
@@ -887,7 +892,12 @@ export function createPlayCanvasApp(
   const hpRed = new pc.Color(0.95, 0.28, 0.22);
   const neutralBracket = new pc.Color(0.98, 0.92, 0.35);
   const enemyBracket = hpRed;
-  type BracketSet = { root: pc.Entity; plane: pc.Entity; mat: pc.StandardMaterial };
+  type BracketSet = {
+    root: pc.Entity;
+    plane: pc.Entity;
+    mat: pc.StandardMaterial;
+    tone: pc.Color | null;
+  };
   const bracketPool: BracketSet[] = [];
   let bracketTex: pc.Texture | null = null;
 
@@ -922,7 +932,7 @@ export function createPlayCanvasApp(
     root.addChild(plane);
     root.enabled = false;
     app.root.addChild(root);
-    return { root, plane, mat };
+    return { root, plane, mat, tone: null };
   }
 
   function ensureBrackets(count: number): void {
@@ -962,6 +972,7 @@ export function createPlayCanvasApp(
     line: pc.Entity;
     mat: pc.StandardMaterial;
     marker: TargetMarker;
+    tiles: number;
   };
   const movePaths: MovePathVis[] = [];
   let moveScroll = 0;
@@ -990,7 +1001,7 @@ export function createPlayCanvasApp(
       root.addChild(marker.root);
       root.enabled = false;
       app.root.addChild(root);
-      movePaths.push({ root, line, mat, marker });
+      movePaths.push({ root, line, mat, marker, tiles: -1 });
     }
   }
 
@@ -1051,14 +1062,17 @@ export function createPlayCanvasApp(
         vis.line.setLocalEulerAngles(0, angle, 0);
         vis.line.setLocalScale(MOVE_LINE_WIDTH, 1, len);
         const tiles = Math.max(1, len / MOVE_DASH_PERIOD);
-        const tiling = new pc.Vec2(1, tiles);
-        vis.mat.diffuseMapTiling = tiling;
-        vis.mat.emissiveMapTiling = tiling;
-        vis.mat.opacityMapTiling = tiling;
-        vis.mat.update();
+        if (Math.abs(vis.tiles - tiles) > 0.01) {
+          vis.tiles = tiles;
+          const tiling = new pc.Vec2(1, tiles);
+          vis.mat.diffuseMapTiling = tiling;
+          vis.mat.emissiveMapTiling = tiling;
+          vis.mat.opacityMapTiling = tiling;
+          vis.mat.update();
+        }
       }
       vis.root.enabled = true;
-      app.root.addChild(vis.root);
+      if (overlayReorder || !vis.root.parent) app.root.addChild(vis.root);
     }
   }
 
@@ -1110,9 +1124,12 @@ export function createPlayCanvasApp(
 
   function placeBracketOn(target: EntitySnap, set: BracketSet): void {
     const color = bracketColorFor(target);
-    set.mat.diffuse = color;
-    set.mat.emissive = color;
-    set.mat.update();
+    if (set.tone !== color) {
+      set.tone = color;
+      set.mat.diffuse = color;
+      set.mat.emissive = color;
+      set.mat.update();
+    }
     const foot = gridFoot(target);
     const live = entityMap.get(target.id);
     const v = live
@@ -1131,7 +1148,7 @@ export function createPlayCanvasApp(
     );
     set.root.setPosition(v.x, y, v.z);
     set.root.enabled = true;
-    app.root.addChild(set.root);
+    if (overlayReorder || !set.root.parent) app.root.addChild(set.root);
   }
 
   function updateSelectionVisual(): void {
@@ -1370,17 +1387,65 @@ export function createPlayCanvasApp(
     return actor ? ACTOR_Y : GROUND_Y + size.h / 2;
   }
 
+  function fogSightChanged(entities: EntitySnap[]): boolean {
+    let changed = fogCell.size === 0;
+    const keep = new Set<string>();
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (e.side !== localSide || e.inside) continue;
+      if (
+        e.kind !== "hq" &&
+        e.kind !== "building" &&
+        e.kind !== "worker" &&
+        e.kind !== "unit" &&
+        e.kind !== "larva"
+      ) {
+        continue;
+      }
+      keep.add(e.id);
+      const v = toView(e.x, e.z);
+      const c = viewToFogCell(v.x, v.z);
+      const key = c.cx + c.cz * GRID_W;
+      if (fogCell.get(e.id) !== key) {
+        fogCell.set(e.id, key);
+        changed = true;
+      }
+    }
+    for (const id of fogCell.keys()) {
+      if (!keep.has(id)) {
+        fogCell.delete(id);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function interpDuration(now: number): number {
+    let dur = 0.1;
+    if (prevSnapAt > 0) {
+      const gap = now - prevSnapAt;
+      if (gap > dur) dur = gap;
+      if (dur > 0.2) dur = 0.2;
+    }
+    prevSnapAt = now;
+    return dur;
+  }
+
   function applySnapshot(snap: MatchSnapshot): void {
+    overlayReorder = true;
     lastEntities = snap.entities.slice();
     const nextCreep = snap.creep || "";
     if (nextCreep !== creepPacked) {
       creepPacked = nextCreep;
       uploadCreepTexture();
     }
-    syncFog(lastEntities, localSide);
-    uploadFogTexture();
+    if (fogSightChanged(lastEntities)) {
+      syncFog(lastEntities, localSide);
+      uploadFogTexture();
+    }
     const seen = new Set<string>();
     const now = performance.now() / 1000;
+    const moveDur = interpDuration(now);
     for (const e of snap.entities) {
       seen.add(e.id);
       let ent = entityMap.get(e.id);
@@ -1486,7 +1551,7 @@ export function createPlayCanvasApp(
         aimX,
         aimZ,
         startedAt: now,
-        duration: INTERP_SEC,
+        duration: moveDur,
       });
     }
     for (const [id, ent] of entityMap) {
@@ -1508,10 +1573,13 @@ export function createPlayCanvasApp(
       }
     }
     updateSelectionVisual();
+    overlayReorder = false;
   }
 
   function setLocalSide(side: Side | null): void {
     localSide = side ?? "bottom";
+    fogCell.clear();
+    prevSnapAt = 0;
     resetFog(localSide);
     syncFog(lastEntities, localSide);
     uploadFogTexture();

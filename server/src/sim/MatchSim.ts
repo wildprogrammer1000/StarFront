@@ -124,6 +124,14 @@ interface SimEntity {
   navI?: number;
   navGX?: number;
   navGZ?: number;
+  /** 직선이 열려 있음. occRev 와 같으면 목적지까지 다시 검사하지 않는다. */
+  navLineOk?: number;
+  navLineRev?: number;
+  /** 격자 경로에서 직선으로 보이는 가장 먼 경유점. */
+  navFar?: number;
+  navFarRev?: number;
+  /** 이번 틱에 실제로 좌표가 바뀐 틱 번호. 밀어내기 후보. */
+  movedTick?: number;
   /** 건설 완료 후 끼임 탈출. 가장 가까운 빈 칸까지 비벼 이동. */
   ejectX?: number;
   ejectZ?: number;
@@ -337,6 +345,7 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
     sim.tick += 1;
 
     tickConstruction(sim);
+    refreshOccupancy(sim);
     tickEject(sim);
     tickBuilders(sim);
     tickLarva(sim);
@@ -986,6 +995,10 @@ function clearNav(e: SimEntity): void {
   delete e.navI;
   delete e.navGX;
   delete e.navGZ;
+  delete e.navLineOk;
+  delete e.navLineRev;
+  delete e.navFar;
+  delete e.navFarRev;
 }
 
 function clearOrder(e: SimEntity): void {
@@ -1073,6 +1086,11 @@ function replaceEntity(sim: MatchSim, e: SimEntity): SimEntity {
   if (typeof e.navI === "number") next.navI = e.navI;
   if (isFiniteNum(e.navGX)) next.navGX = e.navGX;
   if (isFiniteNum(e.navGZ)) next.navGZ = e.navGZ;
+  if (e.navLineOk === 0 || e.navLineOk === 1) next.navLineOk = e.navLineOk;
+  if (typeof e.navLineRev === "number") next.navLineRev = e.navLineRev;
+  if (typeof e.navFar === "number") next.navFar = e.navFar;
+  if (typeof e.navFarRev === "number") next.navFarRev = e.navFarRev;
+  if (typeof e.movedTick === "number") next.movedTick = e.movedTick;
   sim.entities[e.id] = next;
   return next;
 }
@@ -1321,6 +1339,7 @@ function finishPendingBuild(sim: MatchSim, worker: SimEntity): void {
   if (def.method === "morph") {
     delete sim.entities[worker.id];
     spawnConstructing(sim, side, def, x, z);
+    refreshOccupancy(sim);
     return;
   }
   const built = spawnConstructing(sim, side, def, x, z);
@@ -1333,6 +1352,7 @@ function finishPendingBuild(sim: MatchSim, worker: SimEntity): void {
     worker.buildCorner = 0;
   }
   replaceEntity(sim, worker);
+  refreshOccupancy(sim);
 }
 
 function orderMove(
@@ -1430,17 +1450,25 @@ function findIdleTarget(sim: MatchSim, attacker: SimEntity, range: number): SimE
   return best;
 }
 
+/** 교전 거리. 건물·HQ는 중심이 아니라 발자국 가장자리까지. */
+function engageDistance(attacker: SimEntity, target: SimEntity): number {
+  if (target.kind === "building" || target.kind === "hq") {
+    return distToFootprint(attacker.x, attacker.z, target);
+  }
+  return Math.sqrt(dist2(attacker.x, attacker.z, target.x, target.z));
+}
+
 function findEngageTarget(
   sim: MatchSim,
   attacker: SimEntity,
   range: number
 ): SimEntity | null {
   let best: SimEntity | null = null;
-  let bestD = range * range;
+  let bestD = range;
   eachEntity(sim.entities, function (e) {
     if (e.side === attacker.side) return;
     if (!isAttackableTarget(attacker, e)) return;
-    const d = dist2(attacker.x, attacker.z, e.x, e.z);
+    const d = engageDistance(attacker, e);
     if (d <= bestD) {
       bestD = d;
       best = e;
@@ -1566,6 +1594,7 @@ function tryMoveEntity(
 ): boolean {
   const c = clampMap(nx, nz, mapPad(ent));
   if (!canStand(sim, ent, c.x, c.z, ignoreBuildingId)) return false;
+  if (c.x !== ent.x || c.z !== ent.z) ent.movedTick = sim.tick;
   ent.x = c.x;
   ent.z = c.z;
   return true;
@@ -1610,9 +1639,16 @@ function skipsSoftCollision(e: SimEntity): boolean {
   );
 }
 
+const SEP_CELL = 0.5;
+
+function sepBucket(x: number, z: number): string {
+  return Math.floor(x / SEP_CELL) + ":" + Math.floor(z / SEP_CELL);
+}
+
 /**
  * 아군 이동체 소프트 충돌. 완전 블로킹 없이 겹침만 완화한다.
  * 채취·건설 중 일꾼은 유닛 간 밀어내기에서 제외한다.
+ * 이번 틱에 움직인 유닛과 그 옆 칸만 비교한다.
  */
 function separateAllies(sim: MatchSim): void {
   const mobiles: SimEntity[] = [];
@@ -1631,26 +1667,47 @@ function separateAllies(sim: MatchSim): void {
     pz.push(0);
   }
 
+  const buckets: { [key: string]: number[] } = {};
+  for (let i = 0; i < n; i++) {
+    const key = sepBucket(mobiles[i].x, mobiles[i].z);
+    let list = buckets[key];
+    if (!list) {
+      list = [];
+      buckets[key] = list;
+    }
+    list.push(i);
+  }
+
   for (let i = 0; i < n; i++) {
     const a = mobiles[i];
+    const aMoved = a.movedTick === sim.tick;
     const ra = unitCollisionRadius(a);
-    for (let j = i + 1; j < n; j++) {
-      const b = mobiles[j];
+    const ix = Math.floor(a.x / SEP_CELL);
+    const iz = Math.floor(a.z / SEP_CELL);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const list = buckets[ix + dx + ":" + (iz + dz)];
+        if (!list) continue;
+        for (let k = 0; k < list.length; k++) {
+          const j = list[k];
+          if (j <= i) continue;
+          const b = mobiles[j];
+          if (!aMoved && b.movedTick !== sim.tick) continue;
       if (a.side !== b.side) continue;
       // 공중↔지상은 서로 밀어내지 않음 (공중↔공중·지상↔지상만)
       if (!layersCollide(a.typeId, b.typeId)) continue;
       const rb = unitCollisionRadius(b);
       const minD = ra + rb;
-      let dx = b.x - a.x;
-      let dz = b.z - a.z;
-      let d = Math.sqrt(dx * dx + dz * dz);
+      let ox = b.x - a.x;
+      let oz = b.z - a.z;
+      let d = Math.sqrt(ox * ox + oz * oz);
       if (d >= minD) continue;
       if (d < 1e-4) {
         const h =
           (a.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1) + i + j) % 8;
         const ang = (h / 8) * Math.PI * 2;
-        dx = Math.cos(ang);
-        dz = Math.sin(ang);
+        ox = Math.cos(ang);
+        oz = Math.sin(ang);
         d = 1;
       }
       const overlap = minD - d;
@@ -1658,12 +1715,14 @@ function separateAllies(sim: MatchSim): void {
         overlap * 0.5 * UNIT_COLLISION.stiffness,
         UNIT_COLLISION.maxPush
       );
-      const ux = dx / d;
-      const uz = dz / d;
+      const ux = ox / d;
+      const uz = oz / d;
       px[i] -= ux * push;
       pz[i] -= uz * push;
       px[j] += ux * push;
       pz[j] += uz * push;
+        }
+      }
     }
   }
 
@@ -1818,6 +1877,208 @@ function nearestOpenCell(
   return null;
 }
 
+const NAV_N = MAP.width * MAP.depth;
+const occBuild: number[] = [];
+const occMineral: number[] = [];
+const occGas: number[] = [];
+const pathBlocked: number[] = [];
+const gScore: number[] = [];
+const fScore: number[] = [];
+const astarParent: number[] = [];
+const astarSeen: number[] = [];
+let astarGen = 0;
+let occStamp = 0;
+let occRev = 0;
+let occReady = false;
+let routeRev = -1;
+let routes: { [key: string]: { xs: number[]; zs: number[] } } = {};
+const ASTAR_DX = [1, -1, 0, 0, 1, 1, -1, -1];
+const ASTAR_DZ = [0, 0, 1, -1, 1, -1, 1, -1];
+const ASTAR_COST = [10, 10, 10, 10, 14, 14, 14, 14];
+
+function ensureNavBuffers(): void {
+  if (occBuild.length === NAV_N) return;
+  for (let i = 0; i < NAV_N; i++) {
+    occBuild.push(0);
+    occMineral.push(0);
+    occGas.push(0);
+    pathBlocked.push(0);
+    gScore.push(0);
+    fScore.push(0);
+    astarParent.push(-1);
+    astarSeen.push(0);
+  }
+}
+
+function mixHash(h: number, v: number): number {
+  return (h * 33 + v) | 0;
+}
+
+/** 건물·자원·예약 발자국이 바뀌었는지. 칸 좌표만 본다. */
+function blockerStamp(sim: MatchSim): number {
+  let h = 216613626;
+  eachEntity(sim.entities, function (e) {
+    let bit = 0;
+    let x = e.x;
+    let z = e.z;
+    if ((e.kind === "building" || e.kind === "hq") && e.hp > 0) bit = 1;
+    else if (e.kind === "mineral" && e.hp > 0) bit = 2;
+    else if (e.kind === "gas" && e.hp > 0) bit = 3;
+    else if (
+      e.kind === "worker" &&
+      e.morphBuild &&
+      isFiniteNum(e.morphX) &&
+      isFiniteNum(e.morphZ)
+    ) {
+      bit = 4;
+      x = e.morphX;
+      z = e.morphZ;
+    }
+    if (!bit) return;
+    const c = worldToCell(x, z);
+    h = mixHash(h, bit);
+    h = mixHash(h, c.cx);
+    h = mixHash(h, c.cz);
+    h = mixHash(h, e.typeId.length);
+  });
+  return h;
+}
+
+function refreshOccupancy(sim: MatchSim): void {
+  ensureNavBuffers();
+  const stamp = blockerStamp(sim);
+  if (occReady && stamp === occStamp) return;
+  occStamp = stamp;
+  occRev += 1;
+  occReady = true;
+  routeRev = -1;
+  routes = {};
+  for (let i = 0; i < NAV_N; i++) {
+    occBuild[i] = 0;
+    occMineral[i] = 0;
+    occGas[i] = 0;
+  }
+  eachEntity(sim.entities, function (e) {
+    if (e.hp <= 0) return;
+    if (e.kind === "building" || e.kind === "hq") {
+      stampBlocked(occBuild, MAP.width, MAP.depth, e.x, e.z, e.kind, e.typeId);
+    } else if (e.kind === "mineral") {
+      stampBlocked(occMineral, MAP.width, MAP.depth, e.x, e.z, e.kind, e.typeId);
+    } else if (e.kind === "gas") {
+      stampBlocked(occGas, MAP.width, MAP.depth, e.x, e.z, e.kind, e.typeId);
+    }
+  });
+}
+
+/** 전투 유닛 0, 자원 막는 일꾼 1, 에테르 분출구를 통과하는 일꾼 2. */
+function pathClass(ent: SimEntity): number {
+  if (ent.kind !== "worker" || ent.harvestPhase) return 0;
+  const pendingDef = ent.morphBuild ? buildingDef(ent.morphBuild) : null;
+  if (pendingDef !== null && pendingDef.role === "gas") return 2;
+  return 1;
+}
+
+function fillPathBlocked(sim: MatchSim, ent: SimEntity): void {
+  if (!occReady) refreshOccupancy(sim);
+  const blockResources = ent.kind === "worker" && !ent.harvestPhase;
+  const pendingDef = ent.morphBuild ? buildingDef(ent.morphBuild) : null;
+  const ignoreGas =
+    ent.kind === "worker" && pendingDef !== null && pendingDef.role === "gas";
+  for (let i = 0; i < NAV_N; i++) {
+    let b = occBuild[i];
+    if (blockResources && (occMineral[i] || (!ignoreGas && occGas[i]))) b = 1;
+    pathBlocked[i] = b;
+  }
+  eachEntity(sim.entities, function (e) {
+    if (
+      e.id !== ent.id &&
+      e.kind === "worker" &&
+      e.morphBuild &&
+      isFiniteNum(e.morphX) &&
+      isFiniteNum(e.morphZ)
+    ) {
+      stampBlocked(
+        pathBlocked,
+        MAP.width,
+        MAP.depth,
+        e.morphX,
+        e.morphZ,
+        "building",
+        e.morphBuild
+      );
+    }
+  });
+}
+
+function rememberRoute(
+  tx: number,
+  tz: number,
+  xs: number[],
+  zs: number[]
+): void {
+  if (!xs.length) return;
+  if (routeRev !== occRev) {
+    routeRev = occRev;
+    routes = {};
+  }
+  const g = worldToCell(tx, tz);
+  const key = g.cx + ":" + g.cz;
+  if (routes[key]) return;
+  const cxs: number[] = [];
+  const czs: number[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    cxs.push(xs[i]);
+    czs.push(zs[i]);
+  }
+  routes[key] = { xs: cxs, zs: czs };
+}
+
+/** 같은 칸 목적지면 가까운 경유점부터 합류하고, 마지막만 자기 좌표로 둔다. */
+function takeSharedRoute(
+  sim: MatchSim,
+  ent: SimEntity,
+  tx: number,
+  tz: number
+): { xs: number[]; zs: number[] } | null {
+  if (routeRev !== occRev) return null;
+  const g = worldToCell(tx, tz);
+  const hit = routes[g.cx + ":" + g.cz];
+  if (!hit || !hit.xs.length) return null;
+  let bestI = 0;
+  let bestD = dist2(ent.x, ent.z, hit.xs[0], hit.zs[0]);
+  for (let i = 1; i < hit.xs.length; i++) {
+    const d = dist2(ent.x, ent.z, hit.xs[i], hit.zs[i]);
+    if (d < bestD) {
+      bestD = d;
+      bestI = i;
+    }
+  }
+  if (bestD > 6.25) return null;
+  if (!lineClear(sim, ent, hit.xs[bestI], hit.zs[bestI])) return null;
+  const xs: number[] = [];
+  const zs: number[] = [];
+  for (let i = bestI; i < hit.xs.length; i++) {
+    xs.push(hit.xs[i]);
+    zs.push(hit.zs[i]);
+  }
+  const last = xs.length - 1;
+  if (last < 0 || dist2(xs[last], zs[last], tx, tz) > 0.0001) {
+    if (canStand(sim, ent, tx, tz)) {
+      xs.push(tx);
+      zs.push(tz);
+    }
+  }
+  return { xs: xs, zs: zs };
+}
+
+function astarMark(i: number): void {
+  if (astarSeen[i] === astarGen) return;
+  astarSeen[i] = astarGen;
+  gScore[i] = 1e9;
+  fScore[i] = 1e9;
+  astarParent[i] = -1;
+}
+
 /** 건물·자원·예약 발자국이 덮는 칸을 이동 불가로 표시한다. */
 function stampBlocked(
   blocked: number[],
@@ -1845,44 +2106,23 @@ function findGridPath(
   tx: number,
   tz: number
 ): { xs: number[]; zs: number[] } | null {
+  const share = pathClass(ent) === 0;
+  if (share) {
+    const shared = takeSharedRoute(sim, ent, tx, tz);
+    if (shared) return shared;
+  }
   const w = MAP.width;
   const d = MAP.depth;
   const n = w * d;
-  const blocked: number[] = [];
-  for (let i = 0; i < n; i++) blocked.push(0);
-  const blockResources = ent.kind === "worker" && !ent.harvestPhase;
-  const pendingDef = ent.morphBuild ? buildingDef(ent.morphBuild) : null;
-  const ignoreGas =
-    ent.kind === "worker" && pendingDef !== null && pendingDef.role === "gas";
-  eachEntity(sim.entities, function (e) {
-    // 예약된 건설 발자국은 아직 건물이 없어도 지나갈 수 없다.
-    // 그 일꾼 본인의 목적지 칸은 열어 둔다.
-    if (
-      e.id !== ent.id &&
-      e.kind === "worker" &&
-      e.morphBuild &&
-      isFiniteNum(e.morphX) &&
-      isFiniteNum(e.morphZ)
-    ) {
-      stampBlocked(blocked, w, d, e.morphX, e.morphZ, "building", e.morphBuild);
-    }
-    let kind = "";
-    if (e.kind === "building" || e.kind === "hq") kind = e.kind;
-    else if (blockResources && e.kind === "mineral" && e.hp > 0) kind = e.kind;
-    else if (blockResources && e.kind === "gas" && e.hp > 0 && !ignoreGas) {
-      kind = e.kind;
-    }
-    if (!kind) return;
-    stampBlocked(blocked, w, d, e.x, e.z, kind, e.typeId);
-  });
+  fillPathBlocked(sim, ent);
   const start = worldToCell(ent.x, ent.z);
   const sx = start.cx;
   const sz = start.cz;
   if (sx < 0 || sz < 0 || sx >= w || sz >= d) return null;
-  const goal = nearestOpenCell(blocked, tx, tz, ent.x, ent.z);
+  const goal = nearestOpenCell(pathBlocked, tx, tz, ent.x, ent.z);
   if (!goal) return null;
   const startI = sz * w + sx;
-  if (blocked[startI]) blocked[startI] = 0;
+  if (pathBlocked[startI]) pathBlocked[startI] = 0;
   const xs: number[] = [];
   const zs: number[] = [];
   if (sx === goal.cx && sz === goal.cz) {
@@ -1890,32 +2130,28 @@ function findGridPath(
       xs.push(tx);
       zs.push(tz);
     }
+    if (share) rememberRoute(tx, tz, xs, zs);
     return { xs: xs, zs: zs };
   }
 
-  const gScore: number[] = [];
-  const fScore: number[] = [];
-  const parent: number[] = [];
-  for (let i = 0; i < n; i++) {
-    gScore.push(1e9);
-    fScore.push(1e9);
-    parent.push(-1);
+  astarGen += 1;
+  if (astarGen >= 1000000000) {
+    astarGen = 1;
+    for (let i = 0; i < n; i++) astarSeen[i] = 0;
   }
+  astarMark(startI);
   const goalI = goal.cz * w + goal.cx;
   gScore[startI] = 0;
   fScore[startI] = octile(sx, sz, goal.cx, goal.cz);
   const heap: { id: number; f: number }[] = [];
   heapPush(heap, { id: startI, f: fScore[startI] });
-  const dxs = [1, -1, 0, 0, 1, 1, -1, -1];
-  const dzs = [0, 0, 1, -1, 1, -1, 1, -1];
-  const costs = [10, 10, 10, 10, 14, 14, 14, 14];
   let found = false;
   let guard = 0;
   while (heap.length && guard < n) {
     guard += 1;
     const node = heapPop(heap);
     if (!node) break;
-    if (node.f > fScore[node.id]) continue;
+    if (astarSeen[node.id] !== astarGen || node.f > fScore[node.id]) continue;
     if (node.id === goalI) {
       found = true;
       break;
@@ -1923,35 +2159,39 @@ function findGridPath(
     const cz = Math.floor(node.id / w);
     const cx = node.id - cz * w;
     for (let k = 0; k < 8; k++) {
-      const nx = cx + dxs[k];
-      const nz = cz + dzs[k];
+      const nx = cx + ASTAR_DX[k];
+      const nz = cz + ASTAR_DZ[k];
       if (nx < 0 || nz < 0 || nx >= w || nz >= d) continue;
       const ni = nz * w + nx;
-      if (blocked[ni]) continue;
+      if (pathBlocked[ni]) continue;
       if (k >= 4) {
-        if (blocked[cz * w + nx] || blocked[nz * w + cx]) continue;
+        if (pathBlocked[cz * w + nx] || pathBlocked[nz * w + cx]) continue;
       }
-      const ng = gScore[node.id] + costs[k];
-      if (ng >= gScore[ni]) continue;
-      parent[ni] = node.id;
+      const seen = astarSeen[ni] === astarGen;
+      const prevG = seen ? gScore[ni] : 1e9;
+      const ng = gScore[node.id] + ASTAR_COST[k];
+      if (ng >= prevG) continue;
+      astarMark(ni);
+      astarParent[ni] = node.id;
       gScore[ni] = ng;
       fScore[ni] = ng + octile(nx, nz, goal.cx, goal.cz);
       heapPush(heap, { id: ni, f: fScore[ni] });
     }
   }
-  if (!found && parent[goalI] < 0) return null;
+  if (!found) return null;
 
   const revX: number[] = [];
   const revZ: number[] = [];
   let cur = goalI;
   let safe = 0;
   while (cur !== startI && cur >= 0 && safe < n) {
+    if (astarSeen[cur] !== astarGen) break;
     const cz = Math.floor(cur / w);
     const cx = cur - cz * w;
     const c = cellCenter(cx, cz);
     revX.push(c.x);
     revZ.push(c.z);
-    cur = parent[cur];
+    cur = astarParent[cur];
     safe += 1;
   }
   for (let i = revX.length - 1; i >= 0; i--) {
@@ -1962,6 +2202,7 @@ function findGridPath(
     xs.push(tx);
     zs.push(tz);
   }
+  if (share) rememberRoute(tx, tz, xs, zs);
   return { xs: xs, zs: zs };
 }
 
@@ -1972,6 +2213,8 @@ function dropGridPath(ent: SimEntity): void {
   delete ent.navGX;
   delete ent.navGZ;
   delete ent.navBest;
+  delete ent.navFar;
+  delete ent.navFarRev;
 }
 
 /** 다음 경유점이 건물·이동 불가 칸에 들어갔는지. */
@@ -2011,6 +2254,8 @@ function ensureGridPath(
   ent.navI = 0;
   ent.navStuck = 0;
   delete ent.navBest;
+  delete ent.navFar;
+  delete ent.navFarRev;
   if (!path) {
     ent.navXs = [];
     ent.navZs = [];
@@ -2040,11 +2285,22 @@ function gridSteer(
   let wz = tz;
   if (i < xs.length) {
     let far = i;
-    for (let k = xs.length - 1; k >= i; k--) {
-      if (lineClear(sim, ent, xs[k], zs[k])) {
-        far = k;
-        break;
+    const cachedFar =
+      ent.navFarRev === occRev &&
+      typeof ent.navFar === "number" &&
+      ent.navFar >= i &&
+      ent.navFar < xs.length;
+    if (cachedFar) {
+      far = ent.navFar as number;
+    } else {
+      for (let k = xs.length - 1; k >= i; k--) {
+        if (lineClear(sim, ent, xs[k], zs[k])) {
+          far = k;
+          break;
+        }
       }
+      ent.navFar = far;
+      ent.navFarRev = occRev;
     }
     if (!canStand(sim, ent, xs[far], zs[far])) return false;
     wx = xs[far];
@@ -2073,11 +2329,35 @@ function followGridPath(
   tz: number,
   speed: number
 ): boolean | null {
-  if (lineClear(sim, ent, tx, tz) && stepDirect(sim, ent, tx, tz, speed)) {
-    dropGridPath(ent);
-    delete ent.slideSign;
-    delete ent.slideHold;
-    return true;
+  const lineFresh =
+    ent.navLineOk === 1 &&
+    ent.navLineRev === occRev &&
+    isFiniteNum(ent.navGX) &&
+    isFiniteNum(ent.navGZ) &&
+    dist2(ent.navGX, ent.navGZ, tx, tz) <= 0.16;
+  if (lineFresh) {
+    if (stepDirect(sim, ent, tx, tz, speed)) return true;
+    delete ent.navLineOk;
+  }
+  const lineBlocked =
+    ent.navLineOk === 0 &&
+    ent.navLineRev === occRev &&
+    isFiniteNum(ent.navGX) &&
+    isFiniteNum(ent.navGZ) &&
+    dist2(ent.navGX, ent.navGZ, tx, tz) <= 0.16;
+  if (!lineBlocked) {
+    if (lineClear(sim, ent, tx, tz) && stepDirect(sim, ent, tx, tz, speed)) {
+      dropGridPath(ent);
+      delete ent.slideSign;
+      delete ent.slideHold;
+      ent.navLineOk = 1;
+      ent.navLineRev = occRev;
+      ent.navGX = tx;
+      ent.navGZ = tz;
+      return true;
+    }
+    ent.navLineOk = 0;
+    ent.navLineRev = occRev;
   }
   ensureGridPath(sim, ent, tx, tz);
   if (gridSteer(sim, ent, tx, tz, speed)) return true;
@@ -2378,7 +2658,10 @@ function tickUnitOrders(sim: MatchSim): void {
     delete sim.entities[id];
   }
   // 스타1 밀리: 건물이 하나도 없으면 패배 (유닛만으로는 유지 불가)
-  if (structureLost) checkElimination(sim);
+  if (structureLost) {
+    refreshOccupancy(sim);
+    checkElimination(sim);
+  }
 }
 
 function findHq(sim: MatchSim, side: Side): SimEntity | null {
@@ -2437,6 +2720,10 @@ function harvestBlocked(
   cz: number,
   ignoreBuildingId?: string
 ): boolean {
+  if (!ignoreBuildingId && occReady) {
+    if (cx < 0 || cz < 0 || cx >= MAP.width || cz >= MAP.depth) return true;
+    return occBuild[cz * MAP.width + cx] !== 0;
+  }
   let blocked = false;
   eachEntity(sim.entities, function (e) {
     if (blocked) return;
@@ -2454,6 +2741,13 @@ function resourceBlocked(
   cz: number,
   ignoreGas = false
 ): boolean {
+  if (occReady) {
+    if (cx < 0 || cz < 0 || cx >= MAP.width || cz >= MAP.depth) return true;
+    const i = cz * MAP.width + cx;
+    if (occMineral[i]) return true;
+    if (!ignoreGas && occGas[i]) return true;
+    return false;
+  }
   let blocked = false;
   eachEntity(sim.entities, function (e) {
     if (blocked) return;
@@ -2482,6 +2776,7 @@ function tryMoveWorker(
     return false;
   }
   if (harvestBlocked(sim, stood.cx, stood.cz)) return false;
+  if (c.x !== worker.x || c.z !== worker.z) worker.movedTick = sim.tick;
   worker.x = c.x;
   worker.z = c.z;
   return true;
