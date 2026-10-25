@@ -1640,9 +1640,20 @@ function skipsSoftCollision(e: SimEntity): boolean {
 }
 
 const SEP_CELL = 0.5;
+/** 맵 밖 한 칸까지 포함한 분리 격자. 원점은 음수 칸을 양수로 민다. */
+const SEP_STRIDE = 40;
+const SEP_ROWS = 80;
+const SEP_ORIGIN_X = 16;
+const SEP_ORIGIN_Z = 40;
 
-function sepBucket(x: number, z: number): string {
-  return Math.floor(x / SEP_CELL) + ":" + Math.floor(z / SEP_CELL);
+function sepCellIndex(ix: number, iz: number): number {
+  let x = ix + SEP_ORIGIN_X;
+  let z = iz + SEP_ORIGIN_Z;
+  if (x < 0) x = 0;
+  else if (x >= SEP_STRIDE) x = SEP_STRIDE - 1;
+  if (z < 0) z = 0;
+  else if (z >= SEP_ROWS) z = SEP_ROWS - 1;
+  return z * SEP_STRIDE + x;
 }
 
 /**
@@ -1667,15 +1678,19 @@ function separateAllies(sim: MatchSim): void {
     pz.push(0);
   }
 
-  const buckets: { [key: string]: number[] } = {};
+  // Goja: 객체에 넣은 배열은 push 할 수 없다. 인덱스 연결로 칸을 나눈다.
+  const head: number[] = [];
+  const next: number[] = [];
+  const cellN = SEP_STRIDE * SEP_ROWS;
+  for (let i = 0; i < cellN; i++) head.push(-1);
+  for (let i = 0; i < n; i++) next.push(-1);
   for (let i = 0; i < n; i++) {
-    const key = sepBucket(mobiles[i].x, mobiles[i].z);
-    let list = buckets[key];
-    if (!list) {
-      list = [];
-      buckets[key] = list;
-    }
-    list.push(i);
+    const idx = sepCellIndex(
+      Math.floor(mobiles[i].x / SEP_CELL),
+      Math.floor(mobiles[i].z / SEP_CELL)
+    );
+    next[i] = head[idx];
+    head[idx] = i;
   }
 
   for (let i = 0; i < n; i++) {
@@ -1686,41 +1701,45 @@ function separateAllies(sim: MatchSim): void {
     const iz = Math.floor(a.z / SEP_CELL);
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        const list = buckets[ix + dx + ":" + (iz + dz)];
-        if (!list) continue;
-        for (let k = 0; k < list.length; k++) {
-          const j = list[k];
-          if (j <= i) continue;
-          const b = mobiles[j];
+        let j = head[sepCellIndex(ix + dx, iz + dz)];
+        while (j >= 0) {
+          const cur = j;
+          j = next[j];
+          if (cur <= i) continue;
+          const b = mobiles[cur];
           if (!aMoved && b.movedTick !== sim.tick) continue;
-      if (a.side !== b.side) continue;
-      // 공중↔지상은 서로 밀어내지 않음 (공중↔공중·지상↔지상만)
-      if (!layersCollide(a.typeId, b.typeId)) continue;
-      const rb = unitCollisionRadius(b);
-      const minD = ra + rb;
-      let ox = b.x - a.x;
-      let oz = b.z - a.z;
-      let d = Math.sqrt(ox * ox + oz * oz);
-      if (d >= minD) continue;
-      if (d < 1e-4) {
-        const h =
-          (a.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1) + i + j) % 8;
-        const ang = (h / 8) * Math.PI * 2;
-        ox = Math.cos(ang);
-        oz = Math.sin(ang);
-        d = 1;
-      }
-      const overlap = minD - d;
-      const push = Math.min(
-        overlap * 0.5 * UNIT_COLLISION.stiffness,
-        UNIT_COLLISION.maxPush
-      );
-      const ux = ox / d;
-      const uz = oz / d;
-      px[i] -= ux * push;
-      pz[i] -= uz * push;
-      px[j] += ux * push;
-      pz[j] += uz * push;
+          if (a.side !== b.side) continue;
+          // 공중↔지상은 서로 밀어내지 않음 (공중↔공중·지상↔지상만)
+          if (!layersCollide(a.typeId, b.typeId)) continue;
+          const rb = unitCollisionRadius(b);
+          const minD = ra + rb;
+          let ox = b.x - a.x;
+          let oz = b.z - a.z;
+          let d = Math.sqrt(ox * ox + oz * oz);
+          if (d >= minD) continue;
+          if (d < 1e-4) {
+            const h =
+              (a.id.charCodeAt(0) +
+                b.id.charCodeAt(b.id.length - 1) +
+                i +
+                cur) %
+              8;
+            const ang = (h / 8) * Math.PI * 2;
+            ox = Math.cos(ang);
+            oz = Math.sin(ang);
+            d = 1;
+          }
+          const overlap = minD - d;
+          const push = Math.min(
+            overlap * 0.5 * UNIT_COLLISION.stiffness,
+            UNIT_COLLISION.maxPush
+          );
+          const ux = ox / d;
+          const uz = oz / d;
+          px[i] -= ux * push;
+          pz[i] -= uz * push;
+          px[cur] += ux * push;
+          pz[cur] += uz * push;
         }
       }
     }
@@ -1878,14 +1897,14 @@ function nearestOpenCell(
 }
 
 const NAV_N = MAP.width * MAP.depth;
-const occBuild: number[] = [];
-const occMineral: number[] = [];
-const occGas: number[] = [];
-const pathBlocked: number[] = [];
-const gScore: number[] = [];
-const fScore: number[] = [];
-const astarParent: number[] = [];
-const astarSeen: number[] = [];
+let occBuild: number[] = [];
+let occMineral: number[] = [];
+let occGas: number[] = [];
+let pathBlocked: number[] = [];
+let gScore: number[] = [];
+let fScore: number[] = [];
+let astarParent: number[] = [];
+let astarSeen: number[] = [];
 let astarGen = 0;
 let occStamp = 0;
 let occRev = 0;
@@ -1898,16 +1917,32 @@ const ASTAR_COST = [10, 10, 10, 10, 14, 14, 14, 14];
 
 function ensureNavBuffers(): void {
   if (occBuild.length === NAV_N) return;
+  const build: number[] = [];
+  const mineral: number[] = [];
+  const gas: number[] = [];
+  const blocked: number[] = [];
+  const gs: number[] = [];
+  const fs: number[] = [];
+  const parent: number[] = [];
+  const seen: number[] = [];
   for (let i = 0; i < NAV_N; i++) {
-    occBuild.push(0);
-    occMineral.push(0);
-    occGas.push(0);
-    pathBlocked.push(0);
-    gScore.push(0);
-    fScore.push(0);
-    astarParent.push(-1);
-    astarSeen.push(0);
+    build.push(0);
+    mineral.push(0);
+    gas.push(0);
+    blocked.push(0);
+    gs.push(0);
+    fs.push(0);
+    parent.push(-1);
+    seen.push(0);
   }
+  occBuild = build;
+  occMineral = mineral;
+  occGas = gas;
+  pathBlocked = blocked;
+  gScore = gs;
+  fScore = fs;
+  astarParent = parent;
+  astarSeen = seen;
 }
 
 function mixHash(h: number, v: number): number {
