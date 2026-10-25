@@ -72,6 +72,16 @@ export const SPRITE_URL: Record<string, string> = {
   /** 외계인 유닛 파괴 2프레임 */
   fx_alien_die_1: "/sprites/fx_alien_die_1.png?v=die1",
   fx_alien_die_2: "/sprites/fx_alien_die_2.png?v=die1",
+  /** 피격 표식. 때린 유닛별로 한 장. */
+  fx_hit_human_worker: "/sprites/fx_hit_human_worker.png?v=hit1",
+  fx_hit_human_rifleman: "/sprites/fx_hit_human_rifleman.png?v=hit1",
+  fx_hit_human_firebat: "/sprites/fx_hit_human_firebat.png?v=hit1",
+  fx_hit_monster_blade: "/sprites/fx_hit_monster_blade.png?v=hit1",
+  fx_hit_monster_hydra: "/sprites/fx_hit_monster_hydra.png?v=hit1",
+  fx_hit_monster_worker: "/sprites/fx_hit_monster_worker.png?v=hit1",
+  fx_hit_alien_worker: "/sprites/fx_hit_alien_worker.png?v=hit1",
+  fx_hit_alien_guardian: "/sprites/fx_hit_alien_guardian.png?v=hit1",
+  fx_hit_alien_dragoon: "/sprites/fx_hit_alien_dragoon.png?v=hit1",
 };
 
 /** 종족 유닛(일꾼·전투 유닛)이 사라질 때 재생할 프레임 typeId */
@@ -80,6 +90,28 @@ const DIE_FX_FRAMES: Partial<Record<"human" | "monster" | "alien", readonly [str
   monster: ["fx_monster_die_1", "fx_monster_die_2"],
   alien: ["fx_alien_die_1", "fx_alien_die_2"],
 };
+
+/**
+ * 때린 유닛의 피격 표식.
+ * fill 은 1024 칸 중 불투명 픽셀의 긴 변 비율. 보이는 크기를 때린 유닛에 맞출 때 쓴다.
+ */
+const HIT_FX: Record<string, { frame: string; fill: number }> = {
+  human_worker: { frame: "fx_hit_human_worker", fill: 49 / 1024 },
+  human_rifleman: { frame: "fx_hit_human_rifleman", fill: 148 / 1024 },
+  human_firebat: { frame: "fx_hit_human_firebat", fill: 500 / 1024 },
+  monster_blade: { frame: "fx_hit_monster_blade", fill: 520 / 1024 },
+  monster_hydra: { frame: "fx_hit_monster_hydra", fill: 312 / 1024 },
+  monster_worker: { frame: "fx_hit_monster_worker", fill: 277 / 1024 },
+  alien_worker: { frame: "fx_hit_alien_worker", fill: 232 / 1024 },
+  alien_guardian: { frame: "fx_hit_alien_guardian", fill: 531 / 1024 },
+  alien_dragoon: { frame: "fx_hit_alien_dragoon", fill: 508 / 1024 },
+};
+
+export function hitFx(
+  attackerTypeId: string
+): { frame: string; fill: number } | null {
+  return HIT_FX[attackerTypeId] ?? null;
+}
 
 export function dieFxFrames(typeId: string): readonly [string, string] | null {
   const race = typeId.startsWith("human_")

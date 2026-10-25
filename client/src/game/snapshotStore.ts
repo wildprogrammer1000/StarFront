@@ -31,6 +31,7 @@ export function patchEntities(
   // tick을 미세하게 올려 React 스로틀 스냅샷(동일 tick)에 덮어쓰이지 않게 한다.
   pushSnapshot({
     ...current,
+    hits: undefined,
     tick: current.tick + 0.001,
     entities: patch(current.entities.map((e) => ({ ...e }))),
   });

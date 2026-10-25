@@ -58,6 +58,7 @@ export function GameScene({
   onOrderAttack,
   onOrderAttackMove,
   onCancelAttack,
+  systemNotice = null,
   children,
 }: {
   race: RaceId;
@@ -84,6 +85,7 @@ export function GameScene({
   onOrderAttack?: (unitIds: string[], targetId: string) => void;
   onOrderAttackMove?: (unitIds: string[], x: number, z: number) => void;
   onCancelAttack?: () => void;
+  systemNotice?: string | null;
   children: ReactNode;
 }) {
   const [bottomSlot, setBottomSlot] = useState<HTMLDivElement | null>(null);
@@ -151,6 +153,7 @@ export function GameScene({
             onOrderAttack={onOrderAttack}
             onOrderAttackMove={onOrderAttackMove}
             onCancelAttack={onCancelAttack}
+            systemNotice={systemNotice}
           />
           <div className="stage-bottom-ui" ref={bottomShellRef}>
             <div className="stage-bottom-ui-slot" ref={setBottomSlot} />

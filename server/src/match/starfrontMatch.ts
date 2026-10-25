@@ -75,7 +75,11 @@ function assignSide(joinOrder: string[], userId: string): Side {
   return idx === 0 ? "bottom" : "top";
 }
 
-/** joinOrder 변경(방장 퇴장 등) 후 전원 side를 인덱스 기준으로 다시 맞춘다. */
+/**
+ * 대기실에서만 입장 순서로 side를 다시 맞춘다.
+ * 전투 중에는 쓰면 안 된다. 선두가 나가면 남은 top이 bottom이 되고,
+ * 클라이언트 카메라가 상대 진영 시점으로 뒤집힌다.
+ */
 function reassignSides(s: MatchState): void {
   for (let i = 0; i < s.joinOrder.length; i++) {
     const userId = s.joinOrder[i];
@@ -195,6 +199,7 @@ export function matchLeave(
   presences: nkruntime.Presence[]
 ) {
   const s = hydrate(state);
+  const wasPlaying = s.sim.status === "playing";
   for (let i = 0; i < presences.length; i++) {
     const p = presences[i];
     s.sim.removePlayer(p.userId);
@@ -209,6 +214,24 @@ export function matchLeave(
       logger.info("room destroyed (empty) code=%s", s.inviteCode);
     }
     return null;
+  }
+
+  if (wasPlaying) {
+    // 건물 side는 그대로라, 플레이어 side만 바꾸면 아군이 적으로 보인다.
+    if (s.joinOrder.length === 1) {
+      const winnerId = s.joinOrder[0];
+      const winner = s.sim.players[winnerId];
+      s.sim.status = "ended";
+      s.sim.winnerSide = winner ? winner.side : "draw";
+      logger.info(
+        "forfeit winner=%s side=%s",
+        winnerId,
+        s.sim.winnerSide || "-"
+      );
+    }
+    refreshHost(s);
+    dispatcher.broadcastMessage(OpCode.SNAPSHOT, encodeJson(s.sim.snapshot()));
+    return { state: s };
   }
 
   reassignSides(s);

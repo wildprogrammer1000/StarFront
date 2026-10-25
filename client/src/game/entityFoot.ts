@@ -31,6 +31,23 @@ export function groundFoot(e: EntitySnap): { w: number; d: number } {
   }
 }
 
+/** 피격 표식의 보이는 한 변. 맞은 대상이 아니라 때린 유닛 스프라이트 크기. */
+export function attackerSpan(typeId: string): number {
+  const kind: EntitySnap["kind"] =
+    typeId.indexOf("worker") >= 0 ? "worker" : "unit";
+  const foot = groundFoot({
+    id: "",
+    kind,
+    side: "bottom",
+    typeId,
+    x: 0,
+    z: 0,
+    hp: 1,
+    maxHp: 1,
+  });
+  return Math.max(foot.w, foot.d);
+}
+
 /**
  * 선택 테두리가 맞출 칸 점유. 스프라이트 여백 없이 그리드 크기 그대로.
  * 유닛·일꾼·유충·알은 1칸.

@@ -91,6 +91,7 @@ interface Props {
   onOrderAttackMove?: (unitIds: string[], x: number, z: number) => void;
   onCancelAttack?: () => void;
   onAssetsReady?: () => void;
+  systemNotice?: string | null;
 }
 
 type MarqueeBox = { left: number; top: number; width: number; height: number };
@@ -120,6 +121,7 @@ export function GameCanvas({
   onOrderAttackMove,
   onCancelAttack,
   onAssetsReady,
+  systemNotice = null,
 }: Props) {
   const viewRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<PlayCanvasHandle | null>(null);
@@ -813,6 +815,11 @@ export function GameCanvas({
       }
       ref={viewRef}
     >
+      {systemNotice ? (
+        <p className="canvas-leave-notice" role="status" aria-live="polite">
+          {systemNotice}
+        </p>
+      ) : null}
       {!assetsReady ? (
         <div className="battle-assets-loading" role="status" aria-live="polite">
           <p className="battle-assets-loading-label">전장 준비 중</p>

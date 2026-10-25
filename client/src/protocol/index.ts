@@ -118,4 +118,16 @@ export interface MatchSnapshot {
   entities: EntitySnap[];
   /** 괴물 크립. 월드 칸 비트의 16진 문자열 */
   creep?: string;
+  /** 이번 틱에 들어간 타격. 표식 크기는 때린 유닛을 따른다. */
+  hits?: HitSnap[];
+}
+
+/** 한 틱 동안의 피격. 다음 스냅샷에는 남지 않는다. */
+export interface HitSnap {
+  x: number;
+  z: number;
+  /** 때린 유닛 typeId */
+  attackerTypeId: string;
+  /** 1이면 유닛 높이. 없으면 바닥(건물·자원). */
+  lift?: number;
 }

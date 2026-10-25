@@ -46,13 +46,13 @@ function hitRadius(e: EntitySnap): number {
 
 const ATTACK_KINDS = new Set(["unit", "worker", "building", "hq"]);
 
-/** 공격 지정에서 직접 타겟이 되는 적. 아군·자원·바닥은 좌표 공격이동으로 남긴다. */
+/** 공격 클릭의 직접 타겟. 아군·적 유닛과 건물. 빈 땅만 공격이동. */
 export function enemyAttackTarget(
   hit: EntitySnap | null,
   side: Side | null,
   attackerIds: readonly string[]
 ): hit is EntitySnap {
-  if (!hit || !side || hit.side === side) return false;
+  if (!hit || !side || hit.hp <= 0) return false;
   if (attackerIds.indexOf(hit.id) >= 0) return false;
   return ATTACK_KINDS.has(hit.kind);
 }
@@ -75,8 +75,9 @@ function attackPointHits(
 }
 
 /**
- * 공격 명령 클릭. 보이는 스프라이트 안이면 그 적을 직접 타겟으로 고른다.
+ * 공격 명령 클릭. 스프라이트 안이면 그 유닛·건물을 타겟으로 고른다.
  * 겹치면 더 작은 몸통(유닛이 건물보다 우선)을 고른다.
+ * 맞는 대상이 없으면 호출측이 그 좌표로 공격이동한다.
  * renderedAt 이 있으면 화면에 그려진 위치로 판정한다.
  */
 export function pickAttackTargetAt(

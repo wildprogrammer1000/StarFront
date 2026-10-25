@@ -1,7 +1,8 @@
 import * as pc from "playcanvas";
-import type { EntitySnap, MatchSnapshot, Side } from "../protocol";
+import type { EntitySnap, HitSnap, MatchSnapshot, Side } from "../protocol";
 import {
   fogRevealsEntity,
+  isFogVisibleAtView,
   resetFog,
   syncFog,
   viewToFogCell,
@@ -17,7 +18,7 @@ import {
 } from "./grid";
 import { ventCovered } from "./gasVent";
 import { footprintOf } from "./roster";
-import { gridFoot, groundFoot } from "./entityFoot";
+import { attackerSpan, gridFoot, groundFoot } from "./entityFoot";
 import { CREEP_TEX_H, CREEP_TEX_W, writeCreepRgba } from "./creep";
 import {
   CREEP_URL,
@@ -25,6 +26,7 @@ import {
   getCachedImage,
   preloadBattleAssets,
   dieFxFrames,
+  hitFx,
   spriteUrl,
   SPRITE_URL,
   walkFrames,
@@ -593,6 +595,14 @@ export function createPlayCanvasApp(
     frame: number;
   };
   const dieBursts: DieBurst[] = [];
+  /** 피격 표식. 보이는 한 변은 때린 유닛 스프라이트 크기. */
+  const HIT_LIFE = 0.22;
+  type HitFlash = {
+    root: pc.Entity;
+    mat: pc.StandardMaterial;
+    startedAt: number;
+  };
+  const hitFlashes: HitFlash[] = [];
   /** 이동 애니메이션 시작 시각. 정지 시 삭제. */
   const walkStarted = new Map<string, number>();
   /** 엔티티에 마지막으로 적용한 스프라이트 typeId (불필요 스왑 방지) */
@@ -768,6 +778,50 @@ export function createPlayCanvasApp(
     });
   }
 
+  function spawnHitFlashes(hits: HitSnap[] | undefined): void {
+    if (!hits) return;
+    for (let i = 0; i < hits.length; i++) {
+      const hit = hits[i];
+      const fx = hitFx(hit.attackerTypeId);
+      if (!fx || fx.fill <= 0) continue;
+      const v = toView(hit.x, hit.z);
+      if (!isFogVisibleAtView(v.x, v.z)) continue;
+      const base = materialForSprite(fx.frame);
+      if (!base) continue;
+      const mat = base.clone() as pc.StandardMaterial;
+      mat.opacity = 1;
+      mat.update();
+      const size = attackerSpan(hit.attackerTypeId) / fx.fill;
+      const root = new pc.Entity("hit-flash");
+      root.addComponent("render", { type: "plane" });
+      root.setLocalScale(size, 1, size);
+      const mesh = root.render?.meshInstances?.[0];
+      if (mesh) mesh.material = mat;
+      root.setPosition(v.x, hit.lift ? ACTOR_Y + 0.35 : GROUND_Y + 0.3, v.z);
+      app.root.addChild(root);
+      hitFlashes.push({
+        root,
+        mat,
+        startedAt: performance.now() / 1000,
+      });
+    }
+  }
+
+  function tickHitFlashes(now: number): void {
+    for (let i = hitFlashes.length - 1; i >= 0; i--) {
+      const fx = hitFlashes[i];
+      const t = (now - fx.startedAt) / HIT_LIFE;
+      if (t >= 1) {
+        fx.root.destroy();
+        if (typeof fx.mat.destroy === "function") fx.mat.destroy();
+        hitFlashes.splice(i, 1);
+        continue;
+      }
+      fx.mat.opacity = 1 - t;
+      fx.mat.update();
+    }
+  }
+
   function tickDieBursts(now: number): void {
     for (let i = dieBursts.length - 1; i >= 0; i--) {
       const fx = dieBursts[i];
@@ -859,6 +913,7 @@ export function createPlayCanvasApp(
     else updateMovePathVisuals();
     tickWalkAnims(now);
     tickDieBursts(now);
+    tickHitFlashes(now);
     tickMarkerAnims(step);
     // 랠리 점선: UV 오프셋만 갱신 (드로우콜 1, CPU 부담 최소)
     if (rallyRoot.enabled && rallyLineMat) {
@@ -1443,6 +1498,7 @@ export function createPlayCanvasApp(
       syncFog(lastEntities, localSide);
       uploadFogTexture();
     }
+    spawnHitFlashes(snap.hits);
     const seen = new Set<string>();
     const now = performance.now() / 1000;
     const moveDur = interpDuration(now);

@@ -15,7 +15,14 @@ import { previewEnemy, previewEntities, previewMe } from "./screens/fixtures";
 import { LobbyScreen } from "./screens/LobbyScreen";
 import { MatchingScreen, WaitingScreen } from "./screens/MatchFlowScreens";
 import { ResultScreen } from "./screens/ResultScreen";
-import { OpCode, type MatchSnapshot, type PlayerInput, type RaceId } from "./protocol";
+import {
+  OpCode,
+  type MatchSnapshot,
+  type PlayerInput,
+  type PlayerSnap,
+  type RaceId,
+  type Side,
+} from "./protocol";
 import type { RoomRecord } from "./protocol/rooms";
 import { GameScene, LobbyScene } from "./scenes/scenes";
 import {
@@ -32,6 +39,21 @@ type ConnState = "booting" | "ready" | "matching" | "in_match" | "error";
 type MatchPhase = "search" | "join";
 
 const RACE_KEY = "starfront_race";
+const OPPONENT_LEFT_TEXT = "상대플레이어가 나갔습니다.";
+const OPPONENT_LEFT_RESULT_MS = 3000;
+
+function opponentLeftDuringPlay(
+  prev: MatchSnapshot | null,
+  next: MatchSnapshot | null,
+  userId: string | undefined
+): boolean {
+  if (!prev || !next || !userId) return false;
+  if (prev.status !== "playing") return false;
+  const hadOther = prev.players.some((p) => p.userId !== userId);
+  const stillHere = next.players.some((p) => p.userId === userId);
+  const otherGone = !next.players.some((p) => p.userId !== userId);
+  return hadOther && stillHere && otherGone;
+}
 
 function loadRace(): RaceId {
   const saved = localStorage.getItem(RACE_KEY);
@@ -181,6 +203,11 @@ export default function App() {
   const prevMatchStatusRef = useRef<MatchSnapshot["status"] | undefined>(
     undefined
   );
+  const prevLiveSnapRef = useRef<MatchSnapshot | null>(null);
+  const pinnedSideRef = useRef<Side | null>(null);
+  const leftEnemyRef = useRef<PlayerSnap | undefined>(undefined);
+  const leaveUntilRef = useRef(0);
+  const [leaveTick, setLeaveTick] = useState(0);
 
   const chooseRace = useCallback(
     (next: RaceId) => {
@@ -300,6 +327,16 @@ export default function App() {
   }, [snapshot?.status, resetBattleUi]);
 
   useEffect(() => {
+    if (leaveUntilRef.current <= Date.now()) return;
+    const wait = leaveUntilRef.current - Date.now();
+    const id = window.setTimeout(() => {
+      leaveUntilRef.current = 0;
+      setLeaveTick((n) => n + 1);
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [leaveTick, snapshot]);
+
+  useEffect(() => {
     if (!socket) return;
 
     socket.onmatchdata = (matchData) => {
@@ -414,6 +451,36 @@ export default function App() {
   const me =
     snapshot?.players.find((p) => p.userId === session?.user_id) ?? snapshot?.players[0];
   const enemy = snapshot?.players.find((p) => p !== me);
+  const inLiveMatch =
+    conn === "in_match" && !!snapshot && snapshot.status !== "waiting";
+  if (!inLiveMatch) {
+    pinnedSideRef.current = null;
+    leftEnemyRef.current = undefined;
+    leaveUntilRef.current = 0;
+  } else if (
+    snapshot.status === "playing" &&
+    me?.side &&
+    pinnedSideRef.current == null
+  ) {
+    pinnedSideRef.current = me.side;
+  }
+  if (enemy) leftEnemyRef.current = enemy;
+  const opponentDropped = opponentLeftDuringPlay(
+    prevLiveSnapRef.current,
+    snapshot,
+    session?.user_id
+  );
+  if (opponentDropped && leaveUntilRef.current === 0) {
+    leaveUntilRef.current = Date.now() + OPPONENT_LEFT_RESULT_MS;
+    const foe = prevLiveSnapRef.current?.players.find(
+      (p) => p.userId !== session?.user_id
+    );
+    if (foe) leftEnemyRef.current = foe;
+  }
+  prevLiveSnapRef.current = snapshot;
+  const deferResult = leaveUntilRef.current > Date.now();
+  const battleSide = pinnedSideRef.current ?? me?.side ?? null;
+  const resultEnemy = enemy ?? leftEnemyRef.current;
   const stageRace = me?.race ?? race;
   const hostUserId = snapshot?.hostUserId ?? activeRoom?.hostUserId;
   const lobbyPlayers = snapshot
@@ -482,21 +549,28 @@ export default function App() {
     );
   } else if (conn === "matching") {
     screen = <MatchingScreen phase={phase} onCancel={cancelMatch} />;
-  } else if (conn === "in_match" && snapshot?.status === "ended") {
+  } else if (conn === "in_match" && snapshot?.status === "ended" && !deferResult) {
     screen = (
       <ResultScreen
         me={me}
-        enemy={enemy}
+        enemy={resultEnemy}
         entities={snapshot.entities}
         winnerSide={snapshot.winnerSide}
         playSec={snapshot.playSec}
         onLobby={() => void leaveToLobby()}
       />
     );
-  } else if (conn === "in_match" && snapshot?.status === "playing" && me) {
+  } else if (
+    conn === "in_match" &&
+    snapshot &&
+    me &&
+    (snapshot.status === "playing" || deferResult)
+  ) {
     screen = (
       <BattleHud
-        me={me}
+        me={
+          battleSide && me.side !== battleSide ? { ...me, side: battleSide } : me
+        }
         enemy={enemy}
         entities={snapshot.entities}
         onProduce={(buildingId, unitType, larvaIds) => {
@@ -604,7 +678,8 @@ export default function App() {
             ? previewEntities
             : undefined
         }
-        localSide={preview ? "bottom" : (me?.side ?? null)}
+        localSide={preview ? "bottom" : battleSide}
+        systemNotice={!preview && deferResult ? OPPONENT_LEFT_TEXT : null}
         placing={!!placeType && (preview === "battle" || snapshot?.status === "playing")}
         placeType={placeType}
         placeWorkerId={

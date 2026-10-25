@@ -52,7 +52,9 @@ button:disabled {
   background: var(--bg);
 }
 
-/* iOS 홈 화면 PWA는 상단이 비어 있으면 상태 바를 블러로 채운다. */
+/* iOS 홈 화면 PWA는 콘텐츠가 상태바 뒤에 있으면 그 위를 시스템 블러로 덮는다.
+   화면 맨 위(4px 이내)에 높이 6px 이상·너비 80% 이상의 불투명 고정 막이 있으면
+   블러 대신 이 배경색을 단색으로 쓴다. 안전 영역보다 낮으면 캔버스가 샘플에 섞인다. */
 .pwa-status-bar {
   display: none;
 }
@@ -65,8 +67,8 @@ button:disabled {
     left: 0;
     z-index: 80;
     width: 100%;
-    height: max(env(safe-area-inset-top), 6px);
-    background: var(--bg);
+    height: max(env(safe-area-inset-top, 0px), 11px);
+    background-color: var(--bg, #05070a);
     pointer-events: none;
   }
 }
@@ -158,6 +160,27 @@ button:disabled {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* 스타1 시스템 메시지. 전장 좌하단, 노란 글자 + 검은 외곽선 */
+.canvas-leave-notice {
+  position: absolute;
+  z-index: 6;
+  left: 8px;
+  bottom: 6px;
+  margin: 0;
+  max-width: calc(100% - 16px);
+  color: #ffff4a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px 1px 0 #000,
+    1px -1px 0 #000,
+    -1px -1px 0 #000;
+  pointer-events: none;
+  user-select: none;
 }
 
 .minimap {

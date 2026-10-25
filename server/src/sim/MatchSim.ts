@@ -31,6 +31,7 @@ import {
 } from "./roster";
 import type {
   EntitySnap,
+  HitSnap,
   MatchSnapshot,
   MatchStatus,
   PlayerInput,
@@ -151,6 +152,8 @@ export interface MatchSim {
   creep: string;
   creepSpread: number;
   creepRecede: number;
+  /** 이번 틱 피격. 스냅샷에 실어 보낸 뒤 비운다. */
+  hits?: HitSnap[];
   nextId: number;
   playerCount: () => number;
   addPlayer: (
@@ -343,6 +346,7 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
 
     if (sim.status !== "playing") return;
     sim.tick += 1;
+    delete sim.hits;
 
     tickConstruction(sim);
     refreshOccupancy(sim);
@@ -375,6 +379,9 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
         displayName: p.displayName || undefined,
       });
     });
+
+    const hits = sim.hits;
+    delete sim.hits;
 
     const entities: EntitySnap[] = [];
     eachEntity(sim.entities, function (e) {
@@ -455,6 +462,7 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
       players: players,
       entities: entities,
       creep: sim.creep || emptyCreep(),
+      hits: hits && hits.length > 0 ? hits : undefined,
     };
     if (sim.status === "countdown") {
       snap.countdown = Math.max(1, Math.ceil(sim.countdownLeft));
@@ -1376,17 +1384,28 @@ function orderMove(
   replaceEntity(sim, unit);
 }
 
+function isAttackTargetKind(target: SimEntity): boolean {
+  return (
+    target.kind === "unit" ||
+    target.kind === "worker" ||
+    target.kind === "building" ||
+    target.kind === "hq"
+  );
+}
+
+/** 자동 교전. 적 유닛·건물만. */
 function isAttackableTarget(attacker: SimEntity, target: SimEntity): boolean {
   if (!target || target.id === attacker.id || target.hp <= 0) return false;
   if (target.side === attacker.side) return false;
-  if (
-    target.kind !== "unit" &&
-    target.kind !== "worker" &&
-    target.kind !== "building" &&
-    target.kind !== "hq"
-  ) {
-    return false;
-  }
+  if (!isAttackTargetKind(target)) return false;
+  if (isAirUnit(target.typeId) && !attacksAir(attacker.typeId)) return false;
+  return true;
+}
+
+/** 클릭으로 지정한 공격. 아군·적 유닛과 건물. */
+function isCommandAttackTarget(attacker: SimEntity, target: SimEntity): boolean {
+  if (!target || target.id === attacker.id || target.hp <= 0) return false;
+  if (!isAttackTargetKind(target)) return false;
   if (isAirUnit(target.typeId) && !attacksAir(attacker.typeId)) return false;
   return true;
 }
@@ -1400,7 +1419,7 @@ function orderAttack(
   const unit = sim.entities[unitId];
   const target = sim.entities[targetId];
   if (!unit || unit.side !== player.side || !canCommandUnit(unit)) return;
-  if (!target || !isAttackableTarget(unit, target)) return;
+  if (!target || !isCommandAttackTarget(unit, target)) return;
   abandonBuild(unit);
   clearHarvest(sim, unit);
   unit.order = "attack";
@@ -1477,6 +1496,31 @@ function findEngageTarget(
   return best;
 }
 
+/** Goja는 객체에 넣은 배열에 push 하지 못한다. 복사한 새 배열을 다시 넣는다. */
+function noteHit(sim: MatchSim, target: SimEntity, attackerTypeId: string): void {
+  const prev = sim.hits;
+  const next: HitSnap[] = [];
+  if (prev) {
+    const n = prev.length;
+    for (let i = 0; i < n; i++) next.push(prev[i]);
+  }
+  const hit: HitSnap = {
+    x: target.x,
+    z: target.z,
+    attackerTypeId: attackerTypeId,
+  };
+  if (
+    target.kind === "unit" ||
+    target.kind === "worker" ||
+    target.kind === "larva" ||
+    target.kind === "egg"
+  ) {
+    hit.lift = 1;
+  }
+  next.push(hit);
+  sim.hits = next;
+}
+
 function strikeTarget(
   sim: MatchSim,
   e: SimEntity,
@@ -1488,6 +1532,7 @@ function strikeTarget(
   if ((e.attackCd || 0) > 0) return;
   target.hp -= profile.damage;
   e.attackCd = profile.period;
+  noteHit(sim, target, e.typeId);
   if (target.hp <= 0) {
     dead.push(target.id);
     delete e.orderTargetId;
@@ -1503,6 +1548,7 @@ function strikeTarget(
     if (isAirUnit(other.typeId)) return;
     if (dist2(target.x, target.z, other.x, other.z) > r2) return;
     other.hp -= splashDmg;
+    noteHit(sim, other, e.typeId);
     if (other.hp <= 0) dead.push(other.id);
     else replaceEntity(sim, other);
   });
@@ -2628,7 +2674,7 @@ function tickUnitOrders(sim: MatchSim): void {
         return;
       }
       const target = sim.entities[e.orderTargetId];
-      if (!target || !isAttackableTarget(e, target)) {
+      if (!target || !isCommandAttackTarget(e, target)) {
         clearOrder(e);
         replaceEntity(sim, e);
         return;
@@ -2794,29 +2840,6 @@ function resourceBlocked(
   return blocked;
 }
 
-function tryMoveWorker(
-  sim: MatchSim,
-  worker: SimEntity,
-  nx: number,
-  nz: number
-): boolean {
-  const c = clampMap(nx, nz, mapPad(worker));
-  const stood = worldToCell(c.x, c.z);
-  if (
-    stood.cx < 0 ||
-    stood.cz < 0 ||
-    stood.cx >= MAP.width ||
-    stood.cz >= MAP.depth
-  ) {
-    return false;
-  }
-  if (harvestBlocked(sim, stood.cx, stood.cz)) return false;
-  if (c.x !== worker.x || c.z !== worker.z) worker.movedTick = sim.tick;
-  worker.x = c.x;
-  worker.z = c.z;
-  return true;
-}
-
 function buildingCorners(building: SimEntity): { x: number; z: number }[] {
   const fp = footprintOf(building.typeId);
   const halfX = (fp.w * MAP.cellSize) / 2;
@@ -2948,7 +2971,7 @@ function tickBuilders(sim: MatchSim): void {
   });
 }
 
-/** 채취 이동: 건물·HQ만 하드 블록. 유닛·미네랄·에테르는 통과. */
+/** 채취 이동. 직선이 건물·사령부에 막히면 격자 경로로 우회한다. */
 function moveWorkerToward(
   sim: MatchSim,
   worker: SimEntity,
@@ -2956,29 +2979,7 @@ function moveWorkerToward(
   tz: number,
   stopDist: number
 ): boolean {
-  const d2 = dist2(worker.x, worker.z, tx, tz);
-  const stop2 = stopDist * stopDist;
-  if (d2 <= stop2) return true;
-  const dist = Math.sqrt(d2);
-  const step = speedOnCreep(sim, worker.typeId, worker.kind, worker.x, worker.z, WORKER_SPEED) * TICK_DT;
-  if (dist <= step) {
-    tryMoveWorker(sim, worker, tx, tz);
-    return dist2(worker.x, worker.z, tx, tz) <= stop2;
-  }
-  const ux = (tx - worker.x) / dist;
-  const uz = (tz - worker.z) / dist;
-  const nx = worker.x + ux * step;
-  const nz = worker.z + uz * step;
-  if (tryMoveWorker(sim, worker, nx, nz)) {
-    return dist2(worker.x, worker.z, tx, tz) <= stop2;
-  }
-  if (tryMoveWorker(sim, worker, worker.x + ux * step, worker.z)) {
-    return dist2(worker.x, worker.z, tx, tz) <= stop2;
-  }
-  if (tryMoveWorker(sim, worker, worker.x, worker.z + uz * step)) {
-    return dist2(worker.x, worker.z, tx, tz) <= stop2;
-  }
-  return false;
+  return moveEntityToward(sim, worker, tx, tz, WORKER_SPEED, stopDist);
 }
 
 function gasReach(building: SimEntity): number {
