@@ -10,14 +10,15 @@ import {
   MAP,
   MINERAL,
   NEUTRAL,
-  PYLON_POWER,
   START_WORKERS,
   TICK_DT,
+  MOVE_SPEED_SCALE,
   UNIT_COLLISION,
   WORKER_SPEED,
   WORKER_STOP,
   WORLD,
 } from "./constants";
+import { cellInPylonPower } from "@shared/pylonPower";
 import {
   LARVA_CAP,
   LARVA_SEC,
@@ -25,7 +26,6 @@ import {
   SUPPLY_CAP,
   buildingDef,
   footprintOf,
-  footprintOrigin,
   unitDef,
   unitProducedAt,
 } from "./roster";
@@ -83,14 +83,18 @@ interface SimEntity {
   morphType?: string;
   morphLeft?: number;
   morphSec?: number;
+  /** 저글링 짝. 알에서 같이 나온 첫 유닛 id */
+  hatchOf?: string;
   /** 이 일꾼이 짓고 있는 건물 */
   busyOn?: string;
   /** 괴물 변태 건설: 도착 전 예약된 건물 */
   morphBuild?: string;
   morphX?: number;
   morphZ?: number;
-  /** 인간 건설: 순회 중인 꼭지점 인덱스 0–3 */
+  /** 인간 건설: 향하는 꼭지점 인덱스 0–3 */
   buildCorner?: number;
+  /** 같은 모서리가 다시 걸렸을 때 남은 대기(초) */
+  buildWait?: number;
   /** 채취 FSM. 에테르는 건물 안에서 mining. */
   harvestPhase?: "to_mineral" | "mining" | "to_hq";
   harvestMineralId?: string;
@@ -133,7 +137,7 @@ interface SimEntity {
   navFarRev?: number;
   /** 이번 틱에 실제로 좌표가 바뀐 틱 번호. 밀어내기 후보. */
   movedTick?: number;
-  /** 건설 완료 후 끼임 탈출. 가장 가까운 빈 칸까지 비벼 이동. */
+  /** 건물과 겹쳐 끼었을 때, 가장 가까운 빈 칸까지 밀어내기. */
   ejectX?: number;
   ejectZ?: number;
 }
@@ -350,6 +354,7 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
 
     tickConstruction(sim);
     refreshOccupancy(sim);
+    pushOverlappingStructures(sim);
     tickEject(sim);
     tickBuilders(sim);
     tickLarva(sim);
@@ -424,6 +429,7 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
           e.kind === "egg" && typeof e.morphSec === "number"
             ? e.morphSec
             : undefined,
+        hatchOf: e.hatchOf || undefined,
         carry:
           e.kind === "worker" && (e.carry || 0) > 0 ? e.carry : undefined,
         inside:
@@ -730,37 +736,31 @@ function needsPylonPower(def: { race: string; typeId: string }): boolean {
   return def.race === "alien" && def.typeId !== "alien_pylon";
 }
 
-function pylonPowerOrigin(pcx: number, pcz: number): { cx: number; cz: number } {
-  return {
-    cx: pcx - Math.floor((PYLON_POWER.w - 1) / 2),
-    cz: pcz - Math.floor((PYLON_POWER.d - 1) / 2),
-  };
-}
-
-function cellInPylonPower(
-  pcx: number,
-  pcz: number,
-  cx: number,
-  cz: number
-): boolean {
-  const o = pylonPowerOrigin(pcx, pcz);
-  return (
-    cx >= o.cx &&
-    cx < o.cx + PYLON_POWER.w &&
-    cz >= o.cz &&
-    cz < o.cz + PYLON_POWER.d
-  );
-}
-
 function cellPowered(sim: MatchSim, side: Side, cx: number, cz: number): boolean {
   let ok = false;
+  const center = cellCenter(cx, cz);
   eachEntity(sim.entities, function (e) {
     if (ok) return;
     if (e.side !== side || e.typeId !== "alien_pylon" || e.hp <= 0) return;
-    const pc = worldToCell(e.x, e.z);
-    if (cellInPylonPower(pc.cx, pc.cz, cx, cz)) ok = true;
+    if (cellInPylonPower(e.x, e.z, center.x, center.z, MAP.cellSize)) ok = true;
   });
   return ok;
+}
+
+/**
+ * 배치 좌표는 발자국 기하 중심이다.
+ * 짝수 칸은 중심이 격자선 위에 있어 floor 스냅하면 한 칸 밀린다.
+ */
+function originFromCenter(
+  x: number,
+  z: number,
+  w: number,
+  d: number
+): { cx: number; cz: number } {
+  return {
+    cx: Math.round((x + WORLD.halfWidth) / MAP.cellSize - w / 2),
+    cz: Math.round((z + WORLD.halfDepth) / MAP.cellSize - d / 2),
+  };
 }
 
 function footprintPowered(
@@ -802,12 +802,10 @@ function placeBuilding(
   const prevZ = worker.morphZ;
   const prevBusy = worker.busyOn;
   const prevCorner = worker.buildCorner;
+  const prevWait = worker.buildWait;
   abandonBuild(worker);
 
-  const snapped = snapCell(x, z);
-  const origin = snapped
-    ? footprintOrigin(snapped.cx, snapped.cz, def.w, def.d)
-    : null;
+  const origin = originFromCenter(x, z, def.w, def.d);
   const spotOk =
     origin != null &&
     (def.role === "gas"
@@ -839,6 +837,7 @@ function placeBuilding(
     if (isFiniteNum(prevZ)) worker.morphZ = prevZ;
     if (prevBusy) worker.busyOn = prevBusy;
     if (typeof prevCorner === "number") worker.buildCorner = prevCorner;
+    if (typeof prevWait === "number") worker.buildWait = prevWait;
     return;
   }
 
@@ -1050,11 +1049,13 @@ function replaceEntity(sim: MatchSim, e: SimEntity): SimEntity {
   if (e.morphType) next.morphType = e.morphType;
   if (typeof e.morphLeft === "number") next.morphLeft = e.morphLeft;
   if (typeof e.morphSec === "number") next.morphSec = e.morphSec;
+  if (e.hatchOf) next.hatchOf = e.hatchOf;
   if (e.busyOn) next.busyOn = e.busyOn;
   if (e.morphBuild) next.morphBuild = e.morphBuild;
   if (isFiniteNum(e.morphX)) next.morphX = e.morphX;
   if (isFiniteNum(e.morphZ)) next.morphZ = e.morphZ;
   if (typeof e.buildCorner === "number") next.buildCorner = e.buildCorner;
+  if (typeof e.buildWait === "number") next.buildWait = e.buildWait;
   if (isFiniteNum(e.ejectX)) next.ejectX = e.ejectX;
   if (isFiniteNum(e.ejectZ)) next.ejectZ = e.ejectZ;
   if (e.harvestPhase) next.harvestPhase = e.harvestPhase;
@@ -1134,8 +1135,8 @@ function clearRallyPoint(
   replaceEntity(sim, b);
 }
 
-/** 해병 기준. 나머지 속도·사거리·공속은 스타1 패스티스트 비율. */
-const MARINE_SPEED = 1.9;
+/** 해병 기준. 나머지 속도·사거리·공속은 스타1 패스티스트 비율. 이동만 MOVE_SPEED_SCALE. */
+const MARINE_SPEED = 1.9 * MOVE_SPEED_SCALE;
 const MARINE_RANGE = 2.4;
 const MARINE_PERIOD = 0.75;
 /** 화염방사병 스플래시 반경(월드). 주 목표 제외 지상 적에게 절반 피해. */
@@ -1147,7 +1148,7 @@ function combatProfile(typeId: string): {
   damage: number;
   period: number;
 } {
-  // 저글링: 속도 5.49/4, 공속 원본 8/15, 근접 사거리 1/4
+  // 저글링: 속도 5.49/4, 공속 원본 8/15. 사거리는 weaponRange 가 몸통 접촉으로 덮는다.
   if (typeId.indexOf("blade") >= 0) {
     return {
       speed: MARINE_SPEED * (5.49 / 4),
@@ -1183,11 +1184,11 @@ function combatProfile(typeId: string): {
       period: MARINE_PERIOD,
     };
   }
-  // 광전사: 해병과 같은 속도, 공속 22/15, 피해 8×2, 근접
+  // 광전사: 해병과 같은 속도, 공속 22/15, 피해 8×2. 사거리는 weaponRange 가 몸통 접촉으로 덮는다.
   if (typeId.indexOf("guardian") >= 0) {
     return {
       speed: MARINE_SPEED,
-      range: MARINE_RANGE / 4,
+      range: MARINE_RANGE / 6,
       damage: 16,
       period: MARINE_PERIOD * (22 / 15),
     };
@@ -1311,6 +1312,7 @@ function abandonBuild(worker: SimEntity): void {
   delete worker.morphZ;
   delete worker.busyOn;
   delete worker.buildCorner;
+  delete worker.buildWait;
 }
 
 function cancelPendingBuild(sim: MatchSim, worker: SimEntity): void {
@@ -1331,11 +1333,17 @@ function finishPendingBuild(sim: MatchSim, worker: SimEntity): void {
     cancelPendingBuild(sim, worker);
     return;
   }
-  const cell = worldToCell(x, z);
-  const origin = footprintOrigin(cell.cx, cell.cz, def.w, def.d);
+  const origin = originFromCenter(x, z, def.w, def.d);
   if (
     buildingNeedsCreep(typeId) &&
     !footprintOnCreep(sim, origin.cx, origin.cz, def.w, def.d)
+  ) {
+    cancelPendingBuild(sim, worker);
+    return;
+  }
+  if (
+    needsPylonPower(def) &&
+    !footprintPowered(sim, side, origin.cx, origin.cz, def.w, def.d)
   ) {
     cancelPendingBuild(sim, worker);
     return;
@@ -1357,7 +1365,7 @@ function finishPendingBuild(sim: MatchSim, worker: SimEntity): void {
   clearOrder(worker);
   if (def.method === "worker") {
     worker.busyOn = built.id;
-    worker.buildCorner = 0;
+    worker.buildCorner = Math.floor(Math.random() * 4);
   }
   replaceEntity(sim, worker);
   refreshOccupancy(sim);
@@ -1455,12 +1463,12 @@ function orderAttackMove(
 /** 유휴 유닛이 무기 사거리 안에서 고를 가장 가까운 적. */
 function findIdleTarget(sim: MatchSim, attacker: SimEntity, range: number): SimEntity | null {
   let best: SimEntity | null = null;
-  let bestD = range * range;
+  let bestD = 1e9;
   eachEntity(sim.entities, function (e) {
     if (e.side === attacker.side) return;
     if (!isAttackableTarget(attacker, e)) return;
     if (!targetInWeaponRange(attacker, e, range)) return;
-    const d = dist2(attacker.x, attacker.z, e.x, e.z);
+    const d = engageDistance(attacker, e);
     if (d <= bestD) {
       bestD = d;
       best = e;
@@ -1483,11 +1491,12 @@ function findEngageTarget(
   range: number
 ): SimEntity | null {
   let best: SimEntity | null = null;
-  let bestD = range;
+  let bestD = 1e9;
   eachEntity(sim.entities, function (e) {
     if (e.side === attacker.side) return;
     if (!isAttackableTarget(attacker, e)) return;
     const d = engageDistance(attacker, e);
+    if (d > weaponRange(attacker, e, range)) return;
     if (d <= bestD) {
       bestD = d;
       best = e;
@@ -1497,7 +1506,14 @@ function findEngageTarget(
 }
 
 /** Goja는 객체에 넣은 배열에 push 하지 못한다. 복사한 새 배열을 다시 넣는다. */
-function noteHit(sim: MatchSim, target: SimEntity, attackerTypeId: string): void {
+function noteHit(
+  sim: MatchSim,
+  target: SimEntity,
+  attackerId: string,
+  attackerTypeId: string,
+  damage: number
+): void {
+  if (damage <= 0) return;
   const prev = sim.hits;
   const next: HitSnap[] = [];
   if (prev) {
@@ -1507,7 +1523,10 @@ function noteHit(sim: MatchSim, target: SimEntity, attackerTypeId: string): void
   const hit: HitSnap = {
     x: target.x,
     z: target.z,
+    attackerId: attackerId,
     attackerTypeId: attackerTypeId,
+    damage: damage,
+    side: target.side,
   };
   if (
     target.kind === "unit" ||
@@ -1532,7 +1551,7 @@ function strikeTarget(
   if ((e.attackCd || 0) > 0) return;
   target.hp -= profile.damage;
   e.attackCd = profile.period;
-  noteHit(sim, target, e.typeId);
+  noteHit(sim, target, e.id, e.typeId, profile.damage);
   if (target.hp <= 0) {
     dead.push(target.id);
     delete e.orderTargetId;
@@ -1548,7 +1567,7 @@ function strikeTarget(
     if (isAirUnit(other.typeId)) return;
     if (dist2(target.x, target.z, other.x, other.z) > r2) return;
     other.hp -= splashDmg;
-    noteHit(sim, other, e.typeId);
+    noteHit(sim, other, e.id, e.typeId, splashDmg);
     if (other.hp <= 0) dead.push(other.id);
     else replaceEntity(sim, other);
   });
@@ -1677,11 +1696,12 @@ function humanBuildCommand(e: SimEntity): boolean {
   );
 }
 
-/** 채취·건설 중 일꾼 — 유닛 소프트 충돌에서 제외. */
+/** 채취·건설 중 일꾼, 건물 밖으로 밀려 나는 유닛 — 소프트 충돌에서 제외. */
 function skipsSoftCollision(e: SimEntity): boolean {
+  if (isFiniteNum(e.ejectX)) return true;
   return (
     e.kind === "worker" &&
-    (!!e.harvestPhase || !!e.busyOn || humanBuildCommand(e) || isFiniteNum(e.ejectX))
+    (!!e.harvestPhase || !!e.busyOn || humanBuildCommand(e))
   );
 }
 
@@ -2583,15 +2603,51 @@ function distToFootprint(x: number, z: number, target: SimEntity): number {
   return Math.sqrt(ox * ox + oz * oz);
 }
 
+/** 저글링·광전사·일꾼. 화염방사병은 짧은 방사 사거리를 유지한다. */
+function meleeAttacker(typeId: string): boolean {
+  return (
+    typeId.indexOf("blade") >= 0 ||
+    typeId.indexOf("guardian") >= 0 ||
+    typeId.indexOf("worker") >= 0
+  );
+}
+
+/**
+ * 보이는 몸통 반경. 평면 크기의 절반에 불투명 영역 비율을 곱한다.
+ * 평면 크기는 client entityFoot.groundFoot 과 같다.
+ */
+function spriteRadius(e: SimEntity): number {
+  let plane = 0.62;
+  if (e.kind === "worker" || e.typeId.indexOf("worker") >= 0) plane = 0.55;
+  else if (e.typeId === "monster_blade") plane = 0.38;
+  else if (e.typeId === "monster_hydra") plane = 0.55;
+  else if (e.typeId === "alien_dragoon") plane = 0.72;
+  else if (e.kind === "larva") plane = 0.26;
+  else if (e.kind === "egg") plane = 0.36;
+  return plane * 0.36;
+}
+
+/** 몸통이 거의 맞닿는 여유. 이보다 벌어지면 근접 공격이 나가지 않는다. */
+const MELEE_GAP = 0.04;
+
+/** 원거리 유닛은 목록 사거리. 근접은 양쪽 몸통이 닿는 거리. */
+function weaponRange(attacker: SimEntity, target: SimEntity, listed: number): number {
+  if (!meleeAttacker(attacker.typeId)) return listed;
+  const self = spriteRadius(attacker);
+  if (target.kind === "building" || target.kind === "hq") return self + MELEE_GAP;
+  return self + spriteRadius(target) + MELEE_GAP;
+}
+
 function targetInWeaponRange(
   ent: SimEntity,
   target: SimEntity,
   range: number
 ): boolean {
+  const reach = weaponRange(ent, target, range);
   if (target.kind === "building" || target.kind === "hq") {
-    return distToFootprint(ent.x, ent.z, target) <= range;
+    return distToFootprint(ent.x, ent.z, target) <= reach;
   }
-  return dist2(ent.x, ent.z, target.x, target.z) <= range * range;
+  return dist2(ent.x, ent.z, target.x, target.z) <= reach * reach;
 }
 
 /** 건물 공격은 점유 칸 밖, 접근 방향의 사거리 지점을 목표로 한다. */
@@ -2600,8 +2656,9 @@ function attackApproach(
   target: SimEntity,
   range: number
 ): { x: number; z: number; stop: number } {
+  const reach = weaponRange(ent, target, range);
   if (target.kind !== "building" && target.kind !== "hq") {
-    return { x: target.x, z: target.z, stop: range };
+    return { x: target.x, z: target.z, stop: reach };
   }
   const half = entityHalfExtents(target);
   let dx = ent.x - target.x;
@@ -2617,7 +2674,11 @@ function attackApproach(
   const tx = adx < 1e-6 ? 1e9 : half.x / adx;
   const tz = adz < 1e-6 ? 1e9 : half.z / adz;
   const t = tx < tz ? tx : tz;
-  const stand = range > 0.2 ? range * 0.85 : 0.2;
+  const stand = meleeAttacker(ent.typeId)
+    ? reach
+    : range > 0.2
+      ? range * 0.85
+      : 0.2;
   return {
     x: target.x + dx * t + (dx / len) * stand,
     z: target.z + dz * t + (dz / len) * stand,
@@ -2648,6 +2709,7 @@ function tickUnitOrders(sim: MatchSim): void {
   const dead: string[] = [];
   eachEntity(sim.entities, function (e) {
     if (!canCommandUnit(e) || !e.order) return;
+    if (isFiniteNum(e.ejectX) && isFiniteNum(e.ejectZ)) return;
     const profile = combatProfile(e.typeId);
     if (e.order === "move") {
       if (!isFiniteNum(e.orderX) || !isFiniteNum(e.orderZ)) {
@@ -2896,6 +2958,7 @@ function nearestOpenStand(
 function ejectBuilderOutside(sim: MatchSim, worker: SimEntity, _building: SimEntity): void {
   delete worker.busyOn;
   delete worker.buildCorner;
+  delete worker.buildWait;
   clearOrder(worker);
   const spot = nearestOpenStand(sim, worker);
   if (spot) {
@@ -2908,16 +2971,37 @@ function ejectBuilderOutside(sim: MatchSim, worker: SimEntity, _building: SimEnt
   replaceEntity(sim, worker);
 }
 
-/** 끼인 일꾼은 건물 충돌을 끄고 목표 칸까지 걸어 나온다. */
+/**
+ * 지상 유닛·일꾼이 건물 칸에 서 있으면 가장 가까운 빈 칸으로 밀어낸다.
+ * 인간 건설 일꾼과 에테르를 캐는 일꾼은 건물 안에 있는 것이 정상이다.
+ */
+function pushOverlappingStructures(sim: MatchSim): void {
+  eachEntity(sim.entities, function (e) {
+    if (e.hp <= 0) return;
+    if (e.kind !== "unit" && e.kind !== "worker") return;
+    if (isAirUnit(e.typeId)) return;
+    if (humanBuildCommand(e)) return;
+    if (workerInsideGas(e)) return;
+    if (isFiniteNum(e.ejectX) && isFiniteNum(e.ejectZ)) return;
+    if (canStand(sim, e, e.x, e.z)) return;
+    const spot = nearestOpenStand(sim, e);
+    if (!spot) return;
+    e.ejectX = spot.x;
+    e.ejectZ = spot.z;
+    replaceEntity(sim, e);
+  });
+}
+
+/** 끼인 유닛은 건물 충돌을 끄고 목표 칸까지 밀려 나온다. */
 function tickEject(sim: MatchSim): void {
   eachEntity(sim.entities, function (w) {
-    if (w.kind !== "worker") return;
+    if (w.kind !== "worker" && w.kind !== "unit") return;
     if (!isFiniteNum(w.ejectX) || !isFiniteNum(w.ejectZ)) return;
     const tx = w.ejectX;
     const tz = w.ejectZ;
     const d2 = dist2(w.x, w.z, tx, tz);
     const dist = Math.sqrt(d2);
-    const step = WORKER_SPEED * TICK_DT;
+    const step = combatProfile(w.typeId).speed * TICK_DT;
     if (dist <= step) {
       w.x = tx;
       w.z = tz;
@@ -2932,8 +3016,12 @@ function tickEject(sim: MatchSim): void {
   });
 }
 
+/** 건설 중 같은 모서리가 다시 걸리면 서 있는 시간(초). */
+const BUILD_CORNER_WAIT = 0.6;
+
 /**
- * 인간 건설 일꾼: 건물 네 꼭지점 순회.
+ * 인간 건설 일꾼: 건물 네 꼭지점 중 하나를 무작위로 고른다.
+ * 지금 모서리와 같으면 잠시 기다린 뒤 다시 고른다.
  * 건설 중인 자신 사이트는 하드 충돌에서 제외.
  */
 function tickBuilders(sim: MatchSim): void {
@@ -2943,9 +3031,19 @@ function tickBuilders(sim: MatchSim): void {
     if (!site) {
       delete w.busyOn;
       delete w.buildCorner;
+      delete w.buildWait;
       return;
     }
     if (!site.constructing) return;
+
+    if (typeof w.buildWait === "number") {
+      w.buildWait -= TICK_DT;
+      if (w.buildWait > 0) {
+        replaceEntity(sim, w);
+        return;
+      }
+      delete w.buildWait;
+    }
 
     const corners = buildingCorners(site);
     let idx =
@@ -2954,7 +3052,14 @@ function tickBuilders(sim: MatchSim): void {
     const stop = MAP.cellSize * 0.45;
     const d2v = dist2(w.x, w.z, target.x, target.z);
     if (d2v <= stop * stop) {
-      w.buildCorner = (idx + 1) % corners.length;
+      const next = Math.floor(Math.random() * corners.length);
+      if (next === idx) {
+        w.buildWait = BUILD_CORNER_WAIT;
+        replaceEntity(sim, w);
+        return;
+      }
+      w.buildCorner = next;
+      replaceEntity(sim, w);
       return;
     }
     const dist = Math.sqrt(d2v);
@@ -2968,6 +3073,7 @@ function tickBuilders(sim: MatchSim): void {
         tryMoveEntity(sim, w, w.x, nz, site.id);
       }
     }
+    replaceEntity(sim, w);
   });
 }
 
@@ -3433,7 +3539,6 @@ function hatchEgg(sim: MatchSim, egg: SimEntity): void {
   const x = egg.x;
   const z = egg.z;
   const homeId = egg.homeId;
-  delete sim.entities[egg.id];
   const def = unitDef(typeId);
   const hp = unitMaxHp(typeId);
   const isWorker = typeId.indexOf("worker") >= 0;
@@ -3443,32 +3548,38 @@ function hatchEgg(sim: MatchSim, egg: SimEntity): void {
     hq && isFiniteNum(hq.rallyX) && isFiniteNum(hq.rallyZ);
   const kind = isWorker ? "worker" : "unit";
   const count = typeId === "monster_blade" ? 2 : 1;
-  for (let i = 0; i < count; i++) {
-    const ox = count === 1 ? 0 : i === 0 ? -0.16 : 0.16;
-    if (!isWorker && hasRally && hq) {
-      spawn(sim, {
-        kind: kind,
-        side: side,
-        typeId: typeId,
-        x: x + ox,
-        z: z,
-        hp: def ? hp : 40,
-        maxHp: hp,
-        order: "move",
-        orderX: hq.rallyX,
-        orderZ: hq.rallyZ,
-      });
-    } else {
-      spawn(sim, {
-        kind: kind,
-        side: side,
-        typeId: typeId,
-        x: x + ox,
-        z: z,
-        hp: def ? hp : 40,
-        maxHp: hp,
-      });
-    }
+  const rally = !isWorker && hasRally && hq ? hq : null;
+  // 알 id 를 첫 유닛이 물려받는다. 선택 중이던 알이 그 유닛으로 이어진다.
+  delete egg.morphType;
+  delete egg.morphLeft;
+  delete egg.morphSec;
+  delete egg.homeId;
+  egg.kind = kind;
+  egg.typeId = typeId;
+  egg.hp = def ? hp : 40;
+  egg.maxHp = hp;
+  if (count === 2) egg.x = x - 0.16;
+  if (rally) {
+    egg.order = "move";
+    egg.orderX = rally.rallyX;
+    egg.orderZ = rally.rallyZ;
+  }
+  replaceEntity(sim, egg);
+  if (count === 2) {
+    const twin = spawn(sim, {
+      kind: kind,
+      side: side,
+      typeId: typeId,
+      x: x + 0.16,
+      z: z,
+      hp: def ? hp : 40,
+      maxHp: hp,
+      order: rally ? "move" : undefined,
+      orderX: rally ? rally.rallyX : undefined,
+      orderZ: rally ? rally.rallyZ : undefined,
+    });
+    twin.hatchOf = egg.id;
+    replaceEntity(sim, twin);
   }
   if (hq) hq.larva = countLarvaHome(sim, hq);
 }

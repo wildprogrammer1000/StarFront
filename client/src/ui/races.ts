@@ -73,6 +73,38 @@ export function raceOf(id: RaceId | undefined): RaceProfile {
   return RACES[id ?? "human"];
 }
 
+const CATALOG_DESC: Record<string, string> = {
+  human_worker: "자원을 캐고 건물을 짓는 일꾼이다.",
+  human_rifleman: "소총으로 중거리를 사격하는 보병이다.",
+  human_firebat: "가까운 적에게 화염을 방사한다.",
+  human_medic: "아군의 부상을 치료한다.",
+  human_hq: "건설로봇을 생산하는 본진이다.",
+  human_barracks: "보병 유닛을 훈련한다.",
+  human_depot: "인구 상한을 늘린다.",
+  human_refinery: "에테르 분출구에서 가스를 정제한다.",
+  human_academy: "화염방사병과 의무관 훈련을 연다.",
+  monster_worker: "자원을 캐고 건물을 변태시키는 일꾼이다.",
+  monster_blade: "빠른 근접 유닛이다. 한 알에서 둘이 태어난다.",
+  monster_hydra: "가시로 중거리를 공격한다.",
+  monster_sac: "인구 상한을 늘리는 공중 유닛이다.",
+  monster_hatch: "유충을 낳고 유닛이 부화하는 본진이다.",
+  monster_hatchery: "저글링 변태를 연다.",
+  monster_hydra_den: "히드라리스크 변태를 연다.",
+  monster_extractor: "에테르 분출구에서 가스를 추출한다.",
+  alien_worker: "자원을 캐고 건물을 워프하는 일꾼이다.",
+  alien_guardian: "검으로 근접 전투를 하는 전사다.",
+  alien_dragoon: "위상포로 중거리를 사격한다.",
+  alien_hq: "탐사정을 소환하는 본진이다.",
+  alien_gate: "광전사와 용기병을 소환한다.",
+  alien_cyber: "용기병 소환을 연다.",
+  alien_pylon: "인구 상한을 늘리고 건물에 동력을 공급한다.",
+  alien_assimilator: "에테르 분출구에서 가스를 융합한다.",
+};
+
+export function catalogDescription(typeId: string): string {
+  return CATALOG_DESC[typeId] ?? "";
+}
+
 export function entityName(typeId: string, kind: string): string {
   if (kind === "mineral") return "미네랄";
   if (kind === "gas" || typeId === "ether_vent") return "에테르 분출구";

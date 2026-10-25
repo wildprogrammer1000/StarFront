@@ -14,20 +14,19 @@ import {
   NICKNAME_MAX_LEN,
   updateAccountDisplayName,
 } from "../player/profile";
-import type { RaceId } from "../protocol";
 import type { RoomRecord } from "../protocol/rooms";
 import { Banner, Button, TextField } from "../ui/controls";
 import {
+  IconCheck,
+  IconCopy,
   IconNavBattle,
-  IconNavForce,
   IconNavRecord,
   IconNavSettings,
   IconPlus,
 } from "../ui/icons";
-import { RACE_ORDER, RACES } from "../ui/races";
-import { RacePlate, ScreenFill } from "../ui/widgets";
+import { ScreenFill } from "../ui/widgets";
 
-type LobbyTab = "battle" | "force" | "record" | "settings";
+type LobbyTab = "battle" | "record" | "settings";
 
 const DEFAULT_ROOM_NAME = "나의 전선";
 const ROOM_NAME_MAX = 32;
@@ -37,8 +36,7 @@ const TABS: {
   label: string;
   Icon: (props: { size?: number }) => ReactNode;
 }[] = [
-  { id: "battle", label: "전선", Icon: IconNavBattle },
-  { id: "force", label: "병력", Icon: IconNavForce },
+  { id: "battle", label: "배틀", Icon: IconNavBattle },
   { id: "record", label: "전적", Icon: IconNavRecord },
   { id: "settings", label: "설정", Icon: IconNavSettings },
 ];
@@ -46,8 +44,6 @@ const TABS: {
 interface Props {
   client: Client;
   session: Session;
-  race: RaceId;
-  onRace: (race: RaceId) => void;
   onQuickMatch: () => void;
   onCreateRoom: (name: string) => void;
   onEnterMatch: (matchId: string, room: RoomRecord) => Promise<void>;
@@ -57,8 +53,6 @@ interface Props {
 export function LobbyScreen({
   client,
   session,
-  race,
-  onRace,
   onQuickMatch,
   onCreateRoom,
   onEnterMatch,
@@ -72,16 +66,23 @@ export function LobbyScreen({
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [nickname, setNicknameState] = useState("");
+  const [savedNickname, setSavedNickname] = useState("");
   const [nicknameBusy, setNicknameBusy] = useState(false);
+  const [nicknameMsg, setNicknameMsg] = useState("");
+  const [nicknameOk, setNicknameOk] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState(DEFAULT_ROOM_NAME);
+  const [userIdCopied, setUserIdCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setNicknameBusy(true);
     void ensureAccountDisplayName(client, session)
       .then((name) => {
-        if (!cancelled) setNicknameState(name);
+        if (!cancelled) {
+          setNicknameState(name);
+          setSavedNickname(name);
+        }
       })
       .catch((e) => {
         if (!cancelled) {
@@ -97,13 +98,19 @@ export function LobbyScreen({
   }, [client, session, userId]);
 
   const saveNickname = async () => {
+    const draft = nickname.trim();
+    if (!draft || draft === savedNickname || nicknameBusy) return;
     setNicknameBusy(true);
-    setLocalError(null);
+    setNicknameMsg("");
     try {
-      const next = await updateAccountDisplayName(client, session, nickname);
+      const next = await updateAccountDisplayName(client, session, draft);
       setNicknameState(next);
+      setSavedNickname(next);
+      setNicknameOk(true);
+      setNicknameMsg("닉네임을 바꿨습니다.");
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : String(e));
+      setNicknameOk(false);
+      setNicknameMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setNicknameBusy(false);
     }
@@ -164,8 +171,18 @@ export function LobbyScreen({
     }
   };
 
+  const copyUserId = useCallback(async () => {
+    if (!userId) return;
+    try {
+      await navigator.clipboard.writeText(userId);
+      setUserIdCopied(true);
+      window.setTimeout(() => setUserIdCopied(false), 1200);
+    } catch {
+      /* 클립보드 권한이 없으면 조용히 둔다 */
+    }
+  }, [userId]);
+
   const error = localError ?? externalError;
-  const profile = RACES[race];
 
   return (
     <ScreenFill>
@@ -229,72 +246,95 @@ export function LobbyScreen({
             {error && <Banner>{error}</Banner>}
           </div>
         )}
-        {tab === "force" && (
-          <section className="lobby-panel" aria-label="병력">
-            <h2 className="lobby-panel-title">{profile.name}</h2>
-            <p className="lobby-panel-copy">{profile.pitch}</p>
-            <ul className="force-roster">
-              <li>
-                <span>사령부</span>
-                <strong>{profile.hq}</strong>
-              </li>
-              <li>
-                <span>일꾼</span>
-                <strong>{profile.worker}</strong>
-              </li>
-              <li>
-                <span>생산</span>
-                <strong>{profile.building}</strong>
-              </li>
-              <li>
-                <span>전투</span>
-                <strong>{profile.unit}</strong>
-              </li>
-            </ul>
-            <div className="race-row" role="group" aria-label="종족">
-              {RACE_ORDER.map((id) => (
-                <RacePlate
-                  key={id}
-                  race={RACES[id]}
-                  selected={race === id}
-                  onSelect={onRace}
-                />
-              ))}
-            </div>
-          </section>
-        )}
         {tab === "record" && (
-          <section className="lobby-panel is-empty" aria-label="전적">
-            <h2 className="lobby-panel-title">전적</h2>
-            <p className="lobby-panel-copy">승패 기록은 준비 중입니다.</p>
-          </section>
+          <div className="battle-tab">
+            <section className="bnet-list" aria-label="전적">
+              <div className="bnet-head">
+                <span>전적</span>
+              </div>
+              <div className="bnet-rows">
+                <p className="bnet-empty">승패 기록은 준비 중입니다.</p>
+              </div>
+            </section>
+          </div>
         )}
         {tab === "settings" && (
-          <section className="lobby-panel" aria-label="설정">
-            <h2 className="lobby-panel-title">설정</h2>
-            <div className="settings-player" aria-label="플레이어 정보">
-              <p className="settings-section-label">플레이어</p>
-              <TextField
-                id="settings-nickname"
-                label="닉네임"
-                value={nickname}
-                maxLength={NICKNAME_MAX_LEN}
-                autoComplete="off"
-                disabled={nicknameBusy}
-                onChange={(e) => setNicknameState(e.target.value)}
-                onBlur={() => void saveNickname()}
-              />
-              <ul className="force-roster">
-                <li>
+          <div className="battle-tab">
+            <section className="bnet-list" aria-label="설정">
+              <div className="bnet-head">
+                <span>설정</span>
+              </div>
+              <div className="bnet-rows settings-rows">
+                <div className="settings-nick">
+                  <label className="sf-field-label" htmlFor="settings-nickname">
+                    닉네임
+                  </label>
+                  <div className="settings-nick-edit">
+                    <input
+                      id="settings-nickname"
+                      className="sf-input"
+                      value={nickname}
+                      maxLength={NICKNAME_MAX_LEN}
+                      autoComplete="off"
+                      disabled={nicknameBusy}
+                      onChange={(e) => {
+                        setNicknameState(e.target.value);
+                        setNicknameMsg("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        void saveNickname();
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="settings-nick-save"
+                      disabled={
+                        nicknameBusy || nickname.trim() === savedNickname
+                      }
+                      onClick={() => void saveNickname()}
+                    >
+                      수정
+                    </button>
+                  </div>
+                  {nicknameMsg ? (
+                    <p
+                      className={
+                        nicknameOk
+                          ? "settings-nick-msg is-ok"
+                          : "settings-nick-msg"
+                      }
+                      role="status"
+                    >
+                      {nicknameMsg}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="settings-id-row">
                   <span>유저 ID</span>
-                  <strong className="settings-user-id" title={userId}>
-                    {userId || "—"}
-                  </strong>
-                </li>
-              </ul>
-            </div>
-            <p className="lobby-panel-copy">음향 설정은 준비 중입니다.</p>
-          </section>
+                  <span className="settings-user-id-row">
+                    <strong className="settings-user-id" title={userId}>
+                      {userId || "—"}
+                    </strong>
+                    <button
+                      type="button"
+                      className="invite-icon-btn"
+                      aria-label={userIdCopied ? "복사됨" : "유저 ID 복사"}
+                      disabled={!userId}
+                      onClick={() => void copyUserId()}
+                    >
+                      {userIdCopied ? (
+                        <IconCheck size={16} />
+                      ) : (
+                        <IconCopy size={16} />
+                      )}
+                    </button>
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
         )}
       </div>
       <nav className="lobby-nav" aria-label="로비 메뉴">

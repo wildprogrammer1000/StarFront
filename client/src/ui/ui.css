@@ -36,7 +36,8 @@ button {
   cursor: pointer;
 }
 
-button:disabled {
+button:disabled,
+button.is-short {
   cursor: default;
 }
 
@@ -160,6 +161,57 @@ button:disabled {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.dmg-pop-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dmg-pop {
+  position: absolute;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffe56a;
+  text-shadow:
+    0 0 2px #000,
+    1px 0 0 #120c04,
+    -1px 0 0 #120c04,
+    0 1px 0 #120c04,
+    0 -1px 0 #120c04;
+  white-space: nowrap;
+}
+
+.dmg-pop.is-ally {
+  color: #ff6a5a;
+}
+
+/* 자원·인구 부관 안내. 전장 중앙 하단, 흰 글자 */
+.canvas-advisor-notice {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  margin: 0;
+  max-width: calc(100% - 24px);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px 1px 0 #000,
+    1px -1px 0 #000,
+    -1px -1px 0 #000;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* 스타1 시스템 메시지. 전장 좌하단, 노란 글자 + 검은 외곽선 */
@@ -462,11 +514,24 @@ button.sel-multi-cell.is-pick {
 
 button.sel-multi-cell.is-pick:hover,
 button.sel-multi-cell.is-pick:focus-visible {
-  border-color: rgba(125, 255, 74, 0.95);
   outline: none;
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(125, 255, 74, 0.35);
+}
+
+.sel-multi-cell.is-hp-ok {
+  border-color: rgba(125, 255, 74, 0.9);
+}
+
+.sel-multi-cell.is-hp-mid {
+  border-color: rgba(250, 224, 51, 0.95);
+}
+
+.sel-multi-cell.is-hp-low,
+.sel-multi-cell.is-enemy {
+  border-color: rgba(242, 71, 56, 0.95);
+}
+
+.sel-multi-cell.is-neutral {
+  border-color: rgba(250, 235, 89, 0.9);
 }
 
 .sel-multi-cell.is-empty {
@@ -559,18 +624,19 @@ button.sel-multi-cell.is-pick:focus-visible {
 }
 
 /* 유닛/건물 선택 그리드 — 스프라이트 원본 색상 유지 */
-.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:not(:disabled) .cmd-sprite {
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:not(:disabled):not(.is-short) .cmd-sprite {
   filter: none;
   opacity: 1;
 }
 
-.scene-game .cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:not(:disabled) .cmd-sprite,
-.scene-game .cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:active:not(:disabled) .cmd-sprite {
+.scene-game .cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:not(:disabled):not(.is-short) .cmd-sprite,
+.scene-game .cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:active:not(:disabled):not(.is-short) .cmd-sprite {
   filter: none;
 }
 
 /* 비활성(자원 부족 등): 아이콘은 보이게, 상태는 빗금으로 구분 */
-.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:disabled {
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:disabled,
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn.is-short {
   position: relative;
   background: #000000;
   color: var(--btn-ink-muted);
@@ -578,12 +644,14 @@ button.sel-multi-cell.is-pick:focus-visible {
   box-shadow: none;
 }
 
-.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:disabled .cmd-sprite {
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:disabled .cmd-sprite,
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn.is-short .cmd-sprite {
   filter: grayscale(0.55) brightness(1.15) contrast(1.05);
   opacity: 0.88;
 }
 
-.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:disabled::after {
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn:disabled::after,
+.cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn.is-short::after {
   content: "";
   position: absolute;
   inset: 2px;
@@ -594,6 +662,25 @@ button.sel-multi-cell.is-pick:focus-visible {
     rgba(8, 12, 10, 0.28) 3px 5px
   );
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+/* 생산 건물: 지금 만들 수 없는 유닛은 아이콘을 어둡게 */
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn:disabled,
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn.is-short {
+  background: #05070a;
+}
+
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn:disabled .cmd-sprite,
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn:disabled .sel-silhouette,
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn.is-short .cmd-sprite,
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn.is-short .sel-silhouette {
+  filter: brightness(0.32);
+  opacity: 1;
+}
+
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn:disabled::after,
+.cmd-bar.is-unit-list .cmd-btn.sf-btn.sel-unit-btn.is-short::after {
+  content: none;
 }
 
 .battle-guide {
@@ -919,6 +1006,96 @@ button.sel-multi-cell.is-pick:focus-visible {
   padding: 0;
 }
 
+.cmd-bar.is-build-list .cmd-slot {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cmd-info-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  color: #ffffff;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.cmd-info-btn:active {
+  color: var(--phosphor-text);
+}
+
+.catalog-info-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px 72px;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.catalog-info-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 280px);
+  padding: 18px 16px 16px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-edge);
+  color: var(--btn-ink);
+  text-align: center;
+  pointer-events: auto;
+}
+
+.catalog-info-image {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+}
+
+.catalog-info-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--phosphor-text);
+}
+
+.catalog-info-desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.catalog-info-dismiss {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.86);
+  pointer-events: none;
+}
+
 .cmd-bar.is-build-list .cmd-btn.sf-btn.sel-unit-btn {
   box-sizing: border-box;
   width: 100%;
@@ -1237,7 +1414,7 @@ button.sel-multi-cell.is-pick:focus-visible {
 .lobby-nav {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0;
   margin: 0;
   padding: 0;
@@ -1289,87 +1466,112 @@ button.sel-multi-cell.is-pick:focus-visible {
   color: var(--phosphor);
 }
 
-.lobby-panel {
+.settings-rows {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 10px;
-  background: var(--plate);
-  box-shadow: var(--bevel-raised);
 }
 
-.lobby-panel.is-empty {
-  flex: 1;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  min-height: 180px;
-}
-
-.lobby-panel-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--phosphor-text);
-}
-
-.lobby-panel-copy {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--ink-dim);
-}
-
-.force-roster {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.settings-nick {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(125, 255, 74, 0.28);
 }
 
-.force-roster li {
+.settings-nick .sf-field-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--btn-ink);
+}
+
+.settings-nick-edit {
   display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-nick-edit .sf-input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.settings-nick-save {
+  flex: none;
+  height: 40px;
+  min-width: 64px;
+  padding: 0 12px;
+  border: 1px solid var(--btn-edge);
+  border-radius: var(--radius);
+  background: var(--btn-bg);
+  color: var(--btn-ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-nick-save:active:not(:disabled) {
+  border-color: var(--phosphor-text);
+  color: var(--phosphor-text);
+  background: #000000;
+}
+
+.settings-nick-save:disabled {
+  color: rgba(125, 255, 74, 0.35);
+  border-color: rgba(125, 255, 74, 0.28);
+  cursor: default;
+}
+
+.settings-nick-msg {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #ffb4a8;
+}
+
+.settings-nick-msg.is-ok {
+  color: var(--phosphor-text);
+}
+
+.settings-rows .sf-input {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--btn-edge);
+  border-radius: var(--radius);
+  background: #000000;
+  box-shadow: none;
+  color: var(--phosphor-text);
+}
+
+.settings-id-row {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 48px;
   padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.28);
-  box-shadow: inset 1px 1px 0 var(--metal-lo), inset -1px -1px 0 rgba(154, 175, 191, 0.2);
-  font-size: 13px;
-  color: var(--ink-dim);
-}
-
-.force-roster strong {
-  font-family: var(--font-display);
+  color: var(--btn-ink);
+  font-size: 14px;
   font-weight: 700;
-  color: var(--phosphor-text);
 }
 
-.settings-player {
+.settings-user-id-row {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.settings-section-label {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--phosphor-text);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 72%;
 }
 
 .settings-user-id {
-  max-width: 58%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  color: var(--phosphor-text);
 }
 
 .bnet-list {
@@ -1527,7 +1729,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   stroke: currentColor;
 }
 
-.sf-btn:active:not(:disabled) {
+.sf-btn:active:not(:disabled):not(.is-short) {
   background: #000000;
   border-color: var(--btn-active);
   color: var(--btn-active);
@@ -1919,7 +2121,7 @@ button.sel-multi-cell.is-pick:focus-visible {
 /* SC식 우측 상단 자원 — 배경 투명, 아이콘+숫자 */
 .sc-resources {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   margin: 0;
   padding: 0;
@@ -1987,6 +2189,58 @@ button.sel-multi-cell.is-pick:focus-visible {
 
 .sc-res-supply.is-over {
   color: var(--danger);
+}
+
+.battle-menu-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  pointer-events: auto;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
+.battle-menu-btn:active {
+  color: var(--phosphor-text);
+}
+
+.battle-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.72);
+  pointer-events: auto;
+}
+
+.battle-menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 280px);
+  padding: 18px 16px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-edge);
+  color: var(--btn-ink);
+  pointer-events: auto;
+}
+
+.battle-menu-title {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--phosphor-text);
 }
 
 .hp-col {

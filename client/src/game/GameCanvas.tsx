@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { subscribeAdvisorNotice } from "./advisorNotice";
 import { createPortal } from "react-dom";
 import type { EntitySnap, MatchSnapshot, Side } from "../protocol";
 import { IconCheck, IconClose } from "../ui/icons";
@@ -10,6 +11,7 @@ import {
   footprintCenter,
   footprintFits,
   footprintGhostPads,
+  footprintPowered,
   needsPylonPower,
   pylonPowerRects,
   screenToWorld,
@@ -123,10 +125,13 @@ export function GameCanvas({
   onAssetsReady,
   systemNotice = null,
 }: Props) {
+  useEffect(() => subscribeAdvisorNotice(setAdvisorNotice), []);
+
   const viewRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<PlayCanvasHandle | null>(null);
   const assetsReadyRef = useRef(false);
   const [assetsReady, setAssetsReady] = useState(false);
+  const [advisorNotice, setAdvisorNotice] = useState<string | null>(null);
   const [cameraView, setCameraView] = useState<CameraView | null>(null);
   const pointersRef = useRef(
     new Map<number, { x: number; y: number }>()
@@ -220,6 +225,16 @@ export function GameCanvas({
     const onCreep =
       !needsCreep(def.typeId) ||
       footprintOnCreep(creepRef.current, cx, cz, def.w, def.d);
+    const insidePower =
+      !needPower ||
+      footprintPowered(
+        entitiesRef.current,
+        side,
+        cx,
+        cz,
+        def.w,
+        def.d
+      );
     const pads = footprintGhostPads(
       entitiesRef.current,
       side,
@@ -228,7 +243,9 @@ export function GameCanvas({
       def.w,
       def.d,
       ignore,
-      gasMode ? "gas" : "normal"
+      gasMode ? "gas" : "normal",
+      needPower,
+      needPower && !insidePower
     );
     const next: GhostCell = {
       x: center.x,
@@ -565,7 +582,7 @@ export function GameCanvas({
      */
     const isOverlayUiAt = (clientX: number, clientY: number) => {
       const top = document.elementFromPoint(clientX, clientY);
-      return !!top?.closest(".ghost-actions, .minimap");
+      return !!top?.closest(".ghost-actions, .minimap, .battle-menu-btn, .battle-menu-overlay, .cmd-info-btn, .catalog-info-overlay");
     };
     const eventEl = (ev: { target: EventTarget | null }): Element | null => {
       const t = ev.target;
@@ -575,7 +592,7 @@ export function GameCanvas({
     };
     const isGhostUiEvent = (ev: SurfacePoint) => {
       const el = eventEl(ev);
-      if (el?.closest(".ghost-actions, .minimap")) return true;
+      if (el?.closest(".ghost-actions, .minimap, .battle-menu-btn, .battle-menu-overlay, .cmd-info-btn, .catalog-info-overlay")) return true;
       return isOverlayUiAt(ev.clientX, ev.clientY);
     };
 
@@ -818,6 +835,11 @@ export function GameCanvas({
       {systemNotice ? (
         <p className="canvas-leave-notice" role="status" aria-live="polite">
           {systemNotice}
+        </p>
+      ) : null}
+      {advisorNotice ? (
+        <p className="canvas-advisor-notice" role="status" aria-live="polite">
+          {advisorNotice}
         </p>
       ) : null}
       {!assetsReady ? (

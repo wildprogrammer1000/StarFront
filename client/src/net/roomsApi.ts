@@ -40,6 +40,14 @@ async function rpcJson<T>(
   }
 }
 
+export async function updateNickname(
+  client: Client,
+  session: Session,
+  nickname: string
+): Promise<{ ok: boolean; nickname?: string; error?: string }> {
+  return rpcJson(client, session, "update_nickname", { nickname });
+}
+
 export async function createRoom(
   client: Client,
   session: Session,

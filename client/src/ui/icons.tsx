@@ -5,6 +5,7 @@ import {
   Crosshair,
   Cylinder,
   Gem,
+  Info,
   MapPin,
   Menu,
   ArrowRight,
@@ -49,19 +50,19 @@ export const IconHuman = glyph(Shield, 18);
 export const IconMonster = glyph(PawPrint, 18);
 export const IconAlien = glyph(AlienMark, 18);
 export const IconCommand = glyph(Menu, 18);
+export const IconInfo = glyph(Info, 14);
 export const IconClose = glyph(X, 16);
 export const IconNavBattle = glyph(Crosshair, 20);
-export const IconNavForce = glyph(Shield, 20);
 export const IconNavRecord = glyph(ScrollText, 20);
 export const IconNavSettings = glyph(Settings, 20);
 export const IconPlus = glyph(Plus, 22);
-export const IconBuild = glyph(Building2, 22);
-export const IconUnit = glyph(Users, 22);
-export const IconRally = glyph(MapPin, 22);
-export const IconHarvest = glyph(Pickaxe, 22);
-export const IconMove = glyph(ArrowRight, 22);
-export const IconAttack = glyph(Sword, 22);
-export const IconBack = glyph(Undo2, 22);
+export const IconBuild = glyph(Building2, 28);
+export const IconUnit = glyph(Users, 28);
+export const IconRally = glyph(MapPin, 28);
+export const IconHarvest = glyph(Pickaxe, 28);
+export const IconMove = glyph(ArrowRight, 28);
+export const IconAttack = glyph(Sword, 28);
+export const IconBack = glyph(Undo2, 28);
 export const IconCheck = glyph(Check, 16);
 export const IconCopy = glyph(Copy, 16);
 export const IconShare = glyph(Share2, 16);

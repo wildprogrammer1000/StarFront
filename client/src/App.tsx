@@ -12,11 +12,14 @@ import { createRoom, quickJoin } from "./net/roomsApi";
 import { BattleHud, battleQueuePlaceholder } from "./screens/BattleHud";
 import { BootScreen, ErrorScreen } from "./screens/BootScreen";
 import { previewEnemy, previewEntities, previewMe } from "./screens/fixtures";
+import { speakOrder, speakProducedUnits, speakSelection } from "./game/battleVoice";
+import { stopSpeaking } from "./game/voiceSystem";
 import { LobbyScreen } from "./screens/LobbyScreen";
 import { MatchingScreen, WaitingScreen } from "./screens/MatchFlowScreens";
 import { ResultScreen } from "./screens/ResultScreen";
 import {
   OpCode,
+  type EntitySnap,
   type MatchSnapshot,
   type PlayerInput,
   type PlayerSnap,
@@ -106,12 +109,25 @@ export default function App() {
 
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
+  const battleEntitiesRef = useRef<EntitySnap[]>(previewEntities);
+  const battleSideRef = useRef(previewMe.side);
+
+  const unitsById = (ids: string[]): EntitySnap[] => {
+    const ents = battleEntitiesRef.current;
+    const out: EntitySnap[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const entity = ents.find((ent) => ent.id === ids[i]);
+      if (entity) out.push(entity);
+    }
+    return out;
+  };
 
   const selectEntity = useCallback((ids: string[]) => {
     const next = ids.slice(0, MAX_SELECT);
     const prev = selectedIdsRef.current;
     const same =
       prev.length === next.length && prev.every((id, i) => id === next[i]);
+    speakSelection(unitsById(next), battleSideRef.current);
     if (same) return;
     selectedIdsRef.current = next;
     setSelectedIds(next);
@@ -200,6 +216,7 @@ export default function App() {
   const sessionUserIdRef = useRef<string>("");
   sessionUserIdRef.current = session?.user_id ?? "";
   const seenEntityIdsRef = useRef<Set<string>>(new Set());
+  const producedVoiceRef = useRef<Map<string, EntitySnap["kind"]>>(new Map());
   const prevMatchStatusRef = useRef<MatchSnapshot["status"] | undefined>(
     undefined
   );
@@ -299,6 +316,7 @@ export default function App() {
         snapshotRef.current = null;
         setSnapshot(null);
         seenEntityIdsRef.current = new Set();
+        producedVoiceRef.current = new Map();
         resetBattleUi();
         setConn("in_match");
         // 대기·카운트다운 동안 스프라이트를 미리 받아 전투 시작 흰 깜빡임을 줄인다
@@ -367,6 +385,7 @@ export default function App() {
               seenIds: seenEntityIdsRef.current,
               send: (id, input) => sendInputToRef.current?.(id, input),
             });
+            speakProducedUnits(snap, uid, producedVoiceRef.current);
           }
           const now = performance.now();
           if (
@@ -423,12 +442,14 @@ export default function App() {
     setMatchId(null);
     matchIdRef.current = null;
     seenEntityIdsRef.current = new Set();
+    producedVoiceRef.current = new Map();
     clearSnapshot();
     snapshotRef.current = null;
     setSnapshot(null);
     setActiveRoom(null);
     resetBattleUi();
     setConn("ready");
+    stopSpeaking();
   }, [socket, matchId, resetBattleUi]);
 
   const createAndEnter = useCallback(
@@ -480,6 +501,11 @@ export default function App() {
   prevLiveSnapRef.current = snapshot;
   const deferResult = leaveUntilRef.current > Date.now();
   const battleSide = pinnedSideRef.current ?? me?.side ?? null;
+  battleEntitiesRef.current =
+    preview === "battle" || preview === "result"
+      ? previewEntities
+      : (snapshot?.entities ?? []);
+  battleSideRef.current = preview === "battle" ? previewMe.side : (battleSide ?? previewMe.side);
   const resultEnemy = enemy ?? leftEnemyRef.current;
   const stageRace = me?.race ?? race;
   const hostUserId = snapshot?.hostUserId ?? activeRoom?.hostUserId;
@@ -603,6 +629,7 @@ export default function App() {
         onArmAttack={armAttack}
         selectedIds={selectedIds}
         onSelect={selectEntity}
+        onForfeit={() => void leaveToLobby()}
       />
     );
   } else if (
@@ -638,8 +665,6 @@ export default function App() {
       <LobbyScreen
         client={client}
         session={session}
-        race={race}
-        onRace={chooseRace}
         onQuickMatch={() => void findMatch()}
         onEnterMatch={joinRoom}
         onCreateRoom={(name) => void createAndEnter(name)}
@@ -717,6 +742,7 @@ export default function App() {
           const workerIds = harvestWorkerIds.slice();
           setHarvestWorkerIds([]);
           if (!workerIds.length) return;
+          speakOrder(unitsById(workerIds), battleSideRef.current, "move");
           if (preview) {
             setPreviewNonce((n) => n + 1);
             return;
@@ -755,6 +781,7 @@ export default function App() {
         onOrderMove={(unitIds, x, z) => {
           setMoveUnitIds([]);
           if (!unitIds.length) return;
+          speakOrder(unitsById(unitIds), battleSideRef.current, "move");
           const ents =
             preview === "battle" || preview === "result"
               ? previewEntities
@@ -785,6 +812,7 @@ export default function App() {
         onOrderAttack={(unitIds, targetId) => {
           setAttackUnitIds([]);
           if (!unitIds.length) return;
+          speakOrder(unitsById(unitIds), battleSideRef.current, "attack");
           if (preview) {
             const target = previewEntities.find((ent) => ent.id === targetId);
             if (target) {
@@ -805,6 +833,7 @@ export default function App() {
         onOrderAttackMove={(unitIds, x, z) => {
           setAttackUnitIds([]);
           if (!unitIds.length) return;
+          speakOrder(unitsById(unitIds), battleSideRef.current, "attack");
           const ents =
             preview === "battle" || preview === "result"
               ? previewEntities
@@ -837,6 +866,7 @@ export default function App() {
           const workerId = placeWorkerId;
           setPlaceType(null);
           setPlaceWorkerId(null);
+          if (workerId) speakOrder(unitsById([workerId]), battleSideRef.current, "move");
           if (!matchId || preview || !buildingType || !workerId) return;
           sendInputTo(matchId, {
             type: "place_building",

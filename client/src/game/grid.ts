@@ -1,4 +1,5 @@
 import type { EntitySnap, Side } from "../protocol";
+import { cellInPylonPower, pylonPowerSize } from "@shared/pylonPower";
 import { footprintOf, footprintOrigin } from "./roster";
 
 /** 서버 MAP / WORLD 와 동일. 월드 7×20, 칸 0.25. */
@@ -7,8 +8,6 @@ export const HALF_W = 3.5;
 export const HALF_D = 14;
 /** 서버 NEUTRAL.halfDepth 와 동일 — 중앙 건설 불가 구역 */
 export const NEUTRAL_HALF_D = 2;
-/** 서버 PYLON_POWER 와 동일 — 수정주 중심 기준 칸 */
-export const PYLON_POWER = { w: 10, d: 6 } as const;
 export const GRID_W = Math.round((HALF_W * 2) / CELL);
 export const GRID_D = Math.round((HALF_D * 2) / CELL);
 
@@ -94,42 +93,17 @@ export function zoneCenterCell(side: Side): { cx: number; cz: number } {
   };
 }
 
-export function pylonPowerOrigin(
-  pcx: number,
-  pcz: number
-): { cx: number; cz: number } {
-  return {
-    cx: pcx - Math.floor((PYLON_POWER.w - 1) / 2),
-    cz: pcz - Math.floor((PYLON_POWER.d - 1) / 2),
-  };
-}
-
-export function cellInPylonPower(
-  pcx: number,
-  pcz: number,
-  cx: number,
-  cz: number
-): boolean {
-  const o = pylonPowerOrigin(pcx, pcz);
-  return (
-    cx >= o.cx &&
-    cx < o.cx + PYLON_POWER.w &&
-    cz >= o.cz &&
-    cz < o.cz + PYLON_POWER.d
-  );
-}
-
 export function cellPowered(
   entities: EntitySnap[],
   side: Side,
   cx: number,
   cz: number
 ): boolean {
+  const c = cellCenter(cx, cz);
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i];
     if (e.side !== side || e.typeId !== "alien_pylon" || e.hp <= 0) continue;
-    const pc = worldToCell(e.x, e.z);
-    if (cellInPylonPower(pc.cx, pc.cz, cx, cz)) return true;
+    if (cellInPylonPower(e.x, e.z, c.x, c.z, CELL)) return true;
   }
   return false;
 }
@@ -166,15 +140,12 @@ export function pylonPowerRects(
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i];
     if (e.side !== side || e.typeId !== "alien_pylon" || e.hp <= 0) continue;
-    const pc = worldToCell(e.x, e.z);
-    const o = pylonPowerOrigin(pc.cx, pc.cz);
-    const a = cellCenter(o.cx, o.cz);
-    const b = cellCenter(o.cx + PYLON_POWER.w - 1, o.cz + PYLON_POWER.d - 1);
+    const size = pylonPowerSize(CELL);
     rects.push({
-      x: (a.x + b.x) / 2,
-      z: (a.z + b.z) / 2,
-      w: PYLON_POWER.w * CELL,
-      d: PYLON_POWER.d * CELL,
+      x: e.x,
+      z: e.z,
+      w: size.w,
+      d: size.d,
     });
   }
   return rects;
@@ -342,7 +313,8 @@ export function matchingEtherVent(
 }
 
 /** 고스트 칸별 표시. ok=초록, unit/blocked=빨강(유닛·건물·구역외·비스출구).
- *  gas 모드: 분출구와 정확히 겹칠 때만 초록 가능. */
+ *  gas 모드: 분출구와 정확히 겹칠 때만 초록 가능.
+ *  allBlocked: 발자국이 파일런 범위 밖이면 칸 전체를 빨강으로 둔다. */
 export function footprintGhostPads(
   entities: EntitySnap[],
   side: Side,
@@ -351,7 +323,9 @@ export function footprintGhostPads(
   w: number,
   d: number,
   ignoreIds?: ReadonlySet<string> | null,
-  mode: "normal" | "gas" = "normal"
+  mode: "normal" | "gas" = "normal",
+  requirePower = false,
+  allBlocked = false
 ): { x: number; z: number; tone: "ok" | "unit" | "blocked" }[] {
   const origin = footprintOrigin(cx, cz, w, d);
   const onVent =
@@ -365,12 +339,16 @@ export function footprintGhostPads(
       const gz = origin.cz + dz;
       const c = cellCenter(gx, gz);
       let tone: "ok" | "unit" | "blocked" = "ok";
-      if (gx < 0 || gz < 0 || gx >= GRID_W || gz >= GRID_D) {
+      if (allBlocked) {
+        tone = "blocked";
+      } else if (gx < 0 || gz < 0 || gx >= GRID_W || gz >= GRID_D) {
         tone = "blocked";
       } else if (mode === "gas" && !onVent) {
         // 분출구가 아니면 전 칸 빨강
         tone = "blocked";
       } else if (mode === "normal" && !isBuildCell(side, gx, gz)) {
+        tone = "blocked";
+      } else if (requirePower && !cellPowered(entities, side, gx, gz)) {
         tone = "blocked";
       } else if (cellHasUnit(entities, gx, gz, ignoreIds)) {
         tone = "unit";

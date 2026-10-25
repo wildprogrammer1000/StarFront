@@ -6,6 +6,7 @@ import {
   IconEnergy,
   IconGas,
   IconHuman,
+  IconCommand,
   IconMineral,
   IconMonster,
   IconSupply,
@@ -105,11 +106,13 @@ export function BattleResourceStrip({
   gas,
   supply,
   supplyMax = SUPPLY_CAP,
+  onOpenMenu,
 }: {
   minerals: number;
   gas: number;
   supply: number;
   supplyMax?: number;
+  onOpenMenu?: () => void;
 }) {
   const m = roundResource(minerals);
   const g = roundResource(gas);
@@ -135,6 +138,15 @@ export function BattleResourceStrip({
           <span>/{supplyMax}</span>
         </span>
       </span>
+      <button
+        type="button"
+        className="battle-menu-btn"
+        aria-label="메뉴"
+        aria-haspopup="dialog"
+        onClick={onOpenMenu}
+      >
+        <IconCommand size={16} />
+      </button>
     </div>
   );
 }

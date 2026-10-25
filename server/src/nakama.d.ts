@@ -61,6 +61,12 @@ declare namespace nkruntime {
     userId: string;
     username: string;
     displayName: string;
+    avatarUrl?: string;
+    langTag?: string;
+    location?: string;
+    timezone?: string;
+    lang_tag?: string;
+    avatar_url?: string;
   }
 
   interface Nakama {
@@ -78,6 +84,21 @@ declare namespace nkruntime {
       limit: number,
       cursor?: string
     ): StorageList;
+    /** 빈 문자열 필드는 기존 값을 유지한다. metadata 가 null 이면 메타데이터도 유지. */
+    accountUpdateId(
+      userId: string,
+      username: string,
+      displayName: string,
+      timezone: string,
+      location: string,
+      langTag: string,
+      avatarUrl: string,
+      metadata: { [key: string]: unknown } | null
+    ): void;
+    sqlQuery(
+      query: string,
+      args: unknown[]
+    ): { [key: string]: unknown }[];
   }
 
   interface MatchDispatcher {

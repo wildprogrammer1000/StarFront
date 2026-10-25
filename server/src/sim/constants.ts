@@ -43,8 +43,13 @@ export const MINERAL = {
   startNodes: HARVEST.startNodes,
 } as const;
 
-/** 일꾼 이동 속도. 해병 1.9 × 스타1 일꾼 4.92 / 해병 4. */
-export const WORKER_SPEED = 1.9 * (4.92 / 4);
+/**
+ * 전 유닛 이동에 같은 비율로 적용한다. 스타1 유닛 간 비율은 유지하고 체감만 늦춘다.
+ */
+export const MOVE_SPEED_SCALE = 0.9;
+
+/** 일꾼 이동 속도. 해병 1.9 × 스타1 일꾼 4.92 / 해병 4 × MOVE_SPEED_SCALE. */
+export const WORKER_SPEED = 1.9 * (4.92 / 4) * MOVE_SPEED_SCALE;
 
 /**
  * 유닛 소프트 충돌 (GDD 6.3).
@@ -60,11 +65,6 @@ export const UNIT_COLLISION = {
   maxPush: 0.1,
 } as const;
 
-/** 외계인 수정주 파워 — 중심 칸 기준 가로×세로(칸) */
-export const PYLON_POWER = {
-  w: 10,
-  d: 6,
-} as const;
 /** 미네랄·사령부 접근 정지 거리 */
 export const WORKER_STOP = {
   mineral: 0.55,

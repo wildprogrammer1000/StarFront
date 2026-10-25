@@ -70,6 +70,8 @@ export interface EntitySnap {
   morphLeft?: number;
   /** 알 변태 총 시간(초) */
   morphSec?: number;
+  /** 같이 부화한 알(첫 유닛) id. 저글링 두 번째만 가진다. */
+  hatchOf?: string;
   /** 일꾼이 운반 중인 자원 양 */
   carry?: number;
   /** 에테르 건물 안에서 채취 중. 맵에 그리지 않는다. */
@@ -126,8 +128,14 @@ export interface MatchSnapshot {
 export interface HitSnap {
   x: number;
   z: number;
+  /** 때린 유닛. 공격 자세를 그 유닛에만 잠깐 켠다. */
+  attackerId?: string;
   /** 때린 유닛 typeId */
   attackerTypeId: string;
+  /** 이번 타격 피해 */
+  damage: number;
+  /** 맞은 진영. 아군 피격 숫자 색을 가른다. */
+  side: Side;
   /** 1이면 유닛 높이. 없으면 바닥(건물·자원). */
   lift?: number;
 }

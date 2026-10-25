@@ -1,6 +1,7 @@
 import {
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -15,12 +16,14 @@ import {
   IconBuild,
   IconGas,
   IconHarvest,
+  IconInfo,
   IconMineral,
   IconMove,
   IconRally,
   IconUnit,
 } from "../ui/icons";
 import { roundResource } from "../ui/format";
+import { followHatchedSelection } from "../game/hatchSelection";
 import { MAX_SELECT } from "../game/pick";
 import {
   buildingsFor,
@@ -36,7 +39,10 @@ import {
   idsWithCommand,
   selectionHasCommand,
 } from "../game/unitCommands";
-import { entityName, raceOf } from "../ui/races";
+import { Button } from "../ui/controls";
+import { catalogDescription, entityName, raceOf } from "../ui/races";
+import { speakAdvisor } from "../game/battleVoice";
+import type { AdvisorCue } from "../game/voiceLines";
 import { BattleResourceStrip, ScreenFill } from "../ui/widgets";
 
 interface Props {
@@ -64,6 +70,49 @@ interface Props {
   onSelect?: (ids: string[]) => void;
   onCancelQueue?: (buildingId: string, queueIndex: number) => void;
   onCancelMorph?: (eggId: string) => void;
+  onForfeit?: () => void;
+}
+
+function BattleMenu({
+  onContinue,
+  onForfeit,
+}: {
+  onContinue: () => void;
+  onForfeit: () => void;
+}) {
+  const titleId = "battle-menu-title";
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onContinue();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onContinue]);
+
+  return (
+    <div
+      className="battle-menu-overlay"
+      onClick={onContinue}
+    >
+      <div
+        className="battle-menu-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id={titleId} className="battle-menu-title">
+          메뉴
+        </h2>
+        <Button variant="primary" block onClick={onContinue}>
+          계속하기
+        </Button>
+        <Button variant="danger" block onClick={onForfeit}>
+          기권하기
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function BattleHud({
@@ -85,22 +134,31 @@ export function BattleHud({
   onSelect,
   onCancelQueue,
   onCancelMorph,
+  onForfeit,
 }: Props) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const energy = roundResource(me.energy);
   const minerals = roundResource(me.minerals);
   const counted = supplyCount(me.side, me.race, entities);
   const supply = me.supply ?? counted.used;
   const supplyMax = me.supplyMax ?? counted.max;
 
-  useEffect(() => {
-    if (!selectedIds.length) return;
-    const alive = new Set(entities.map((e) => e.id));
-    const next = selectedIds.filter((id) => alive.has(id)).slice(0, MAX_SELECT);
+  const prevEntitiesRef = useRef<EntitySnap[]>([]);
+  useLayoutEffect(() => {
+    const prev = prevEntitiesRef.current;
+    prevEntitiesRef.current = entities;
+    if (!onSelect) return;
+    const next = followHatchedSelection(
+      selectedIds,
+      prev,
+      entities,
+      MAX_SELECT
+    );
     if (
       next.length !== selectedIds.length ||
       next.some((id, i) => id !== selectedIds[i])
     ) {
-      onSelect?.(next);
+      onSelect(next);
     }
   }, [entities, selectedIds, onSelect]);
 
@@ -136,6 +194,7 @@ export function BattleHud({
               key={`multi-${selectedGroup.map((e) => e.id).join(",")}`}
               units={selectedGroup}
               meSide={me.side}
+              race={me.race}
               moveArmed={selectedGroup.some((e) => moveUnitIds.includes(e.id))}
               onArmMove={onArmMove}
               attackArmed={selectedGroup.some((e) =>
@@ -188,8 +247,18 @@ export function BattleHud({
           gas={me.energy}
           supply={supply}
           supplyMax={supplyMax}
+          onOpenMenu={() => setMenuOpen(true)}
         />
       </header>
+      {menuOpen ? (
+        <BattleMenu
+          onContinue={() => setMenuOpen(false)}
+          onForfeit={() => {
+            if (onForfeit) onForfeit();
+            else setMenuOpen(false);
+          }}
+        />
+      ) : null}
       {placeType ? (
         <p className="battle-guide" role="status">
           건설 위치를 지정하세요
@@ -294,9 +363,112 @@ function SelPortrait({
   );
 }
 
+function CatalogInfoModal({
+  name,
+  image,
+  description,
+  onClose,
+}: {
+  name: string;
+  image: string | null;
+  description: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="catalog-info-overlay" onClick={onClose}>
+      <div
+        className="catalog-info-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="catalog-info-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {image ? (
+          <img className="catalog-info-image" src={image} alt="" draggable={false} />
+        ) : (
+          <span className="sel-silhouette is-unit" />
+        )}
+        <h2 id="catalog-info-title" className="catalog-info-name">
+          {name}
+        </h2>
+        {description ? <p className="catalog-info-desc">{description}</p> : null}
+      </div>
+      <p className="catalog-info-dismiss">탭하여 닫기</p>
+    </div>,
+    document.body
+  );
+}
+
+function CatalogSlot({
+  typeId,
+  name,
+  className,
+  disabled,
+  shortage,
+  pressed,
+  onClick,
+  children,
+}: {
+  typeId: string;
+  name: string;
+  className: string;
+  disabled?: boolean;
+  shortage?: boolean;
+  pressed?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const image = portraitUrl(typeId) ?? spriteUrl(typeId);
+  return (
+    <div className="cmd-slot">
+      <button
+        type="button"
+        className={className}
+        disabled={disabled}
+        aria-disabled={shortage ? true : undefined}
+        aria-label={name}
+        aria-pressed={pressed}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+      <button
+        type="button"
+        className="cmd-info-btn"
+        aria-label={`${name} 설명`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        <IconInfo size={12} />
+      </button>
+      {open ? (
+        <CatalogInfoModal
+          name={name}
+          image={image}
+          description={catalogDescription(typeId)}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function MultiSelectPanel({
   units,
   meSide,
+  race,
   moveArmed = false,
   onArmMove,
   attackArmed = false,
@@ -309,6 +481,7 @@ function MultiSelectPanel({
 }: {
   units: EntitySnap[];
   meSide: PlayerSnap["side"];
+  race: RaceId;
   moveArmed?: boolean;
   onArmMove?: (unitIds: string[] | null) => void;
   attackArmed?: boolean;
@@ -316,7 +489,7 @@ function MultiSelectPanel({
   harvestArmed?: boolean;
   onArmHarvest?: (workerIds: string[] | null) => void;
   onPickUnit?: (id: string) => void;
-  produceActions?: { typeId: string; name: string; enabled: boolean }[];
+  produceActions?: ProduceAction[];
   onProduce?: (
     buildingId: string,
     unitType: string,
@@ -353,16 +526,21 @@ function MultiSelectPanel({
 
   if (unitListOpen && canProduce) {
     return (
-      <div className="cmd-bar is-build-list">
+      <div className="cmd-bar is-build-list is-unit-list">
         <DragScroll>
           {produceActions.map((action) => (
-            <button
+            <CatalogSlot
               key={action.typeId}
-              type="button"
-              className="cmd-btn sf-btn sel-unit-btn"
-              disabled={!action.enabled}
-              aria-label={action.name}
+              typeId={action.typeId}
+              name={action.name}
+              className={`cmd-btn sf-btn sel-unit-btn${action.shortage ? " is-short" : ""}`}
+              disabled={!action.enabled && !action.shortage}
+              shortage={!!action.shortage}
               onClick={() => {
+                if (action.shortage) {
+                  speakAdvisor(race, action.shortage);
+                  return;
+                }
                 if (!action.enabled || !larvaIds.length) return;
                 onProduce?.(larvaIds[0], action.typeId, larvaIds);
               }}
@@ -377,7 +555,7 @@ function MultiSelectPanel({
               ) : (
                 <span className="sel-silhouette is-unit" />
               )}
-            </button>
+            </CatalogSlot>
           ))}
         </DragScroll>
         <button
@@ -386,7 +564,7 @@ function MultiSelectPanel({
           aria-label="뒤로가기"
           onClick={() => setUnitListOpen(false)}
         >
-          <IconBack size={22} />
+          <IconBack size={28} />
         </button>
       </div>
     );
@@ -404,7 +582,7 @@ function MultiSelectPanel({
               <button
                 key={unit.id}
                 type="button"
-                className="sel-multi-cell is-pick"
+                className={`sel-multi-cell is-pick ${slotToneClass(unit, meSide)}`}
                 role="listitem"
                 aria-label={`${entityName(unit.typeId, unit.kind)} 단독 선택`}
                 onClick={() => onPickUnit?.(unit.id)}
@@ -436,7 +614,7 @@ function MultiSelectPanel({
               aria-pressed={moveLit}
               onClick={() => onArmMove?.(moveArmed ? null : moveIds)}
             >
-              <IconMove size={22} />
+              <IconMove size={28} />
             </button>
           ) : null}
           {canAttack ? (
@@ -447,7 +625,7 @@ function MultiSelectPanel({
               aria-pressed={attackLit}
               onClick={() => onArmAttack?.(attackArmed ? null : attackIds)}
             >
-              <IconAttack size={22} />
+              <IconAttack size={28} />
             </button>
           ) : null}
           {canHarvest ? (
@@ -460,7 +638,7 @@ function MultiSelectPanel({
                 onArmHarvest?.(harvestArmed ? null : harvestIds)
               }
             >
-              <IconHarvest size={22} />
+              <IconHarvest size={28} />
             </button>
           ) : null}
           {canProduce ? (
@@ -470,7 +648,7 @@ function MultiSelectPanel({
               aria-label="유닛"
               onClick={() => setUnitListOpen(true)}
             >
-              <IconUnit size={22} />
+              <IconUnit size={28} />
             </button>
           ) : null}
         </div>
@@ -508,7 +686,7 @@ function SelectionPanel({
   energy: number;
   minerals: number;
   entities: EntitySnap[];
-  actions: { typeId: string; name: string; enabled: boolean }[];
+  actions: ProduceAction[];
   placeType?: string | null;
   onArmPlace?: (typeId: string | null, workerId?: string | null) => void;
   harvestArmed?: boolean;
@@ -610,21 +788,27 @@ function SelectionPanel({
             const techOk =
               !building.needs ||
               hasReadyBuilding(entities, meSide, building.needs);
-            const afford =
-              techOk &&
-              energy >= building.costE &&
-              minerals >= building.costM;
+            const shortage = techOk
+              ? resourceShortage(minerals, energy, 0, 0, building.costM, building.costE, 0)
+              : null;
+            const afford = techOk && !shortage;
             return (
-              <button
+              <CatalogSlot
                 key={building.typeId}
-                type="button"
+                typeId={building.typeId}
+                name={building.name}
                 className={`cmd-btn sf-btn sel-unit-btn${
                   placeType === building.typeId ? " is-armed" : ""
-                }`}
-                disabled={!afford}
-                aria-label={building.name}
-                aria-pressed={placeType === building.typeId}
+                }${shortage ? " is-short" : ""}`}
+                disabled={!techOk}
+                shortage={!!shortage}
+                pressed={placeType === building.typeId}
                 onClick={() => {
+                  if (shortage) {
+                    speakAdvisor(race, shortage);
+                    return;
+                  }
+                  if (!afford) return;
                   onArmPlace?.(
                     placeType === building.typeId ? null : building.typeId,
                     selected.id
@@ -641,7 +825,7 @@ function SelectionPanel({
                 ) : (
                   <span className="sel-silhouette is-building" />
                 )}
-              </button>
+              </CatalogSlot>
             );
           })}
         </DragScroll>
@@ -654,7 +838,7 @@ function SelectionPanel({
             onArmPlace?.(null);
           }}
         >
-          <IconBack size={22} />
+          <IconBack size={28} />
         </button>
       </div>
     );
@@ -662,17 +846,23 @@ function SelectionPanel({
 
   if (unitListOpen && canProduce) {
     return (
-      <div className="cmd-bar is-build-list">
+      <div className="cmd-bar is-build-list is-unit-list">
         <DragScroll>
           {actions.map((action) => (
-            <button
+            <CatalogSlot
               key={action.typeId}
-              type="button"
-              className="cmd-btn sf-btn sel-unit-btn"
-              disabled={!action.enabled || queueFull}
-              aria-label={action.name}
+              typeId={action.typeId}
+              name={action.name}
+              className={`cmd-btn sf-btn sel-unit-btn${action.shortage ? " is-short" : ""}`}
+              disabled={(!action.enabled && !action.shortage) || queueFull}
+              shortage={!!action.shortage}
               onClick={() => {
                 if (queueFull) return;
+                if (action.shortage) {
+                  speakAdvisor(race, action.shortage);
+                  return;
+                }
+                if (!action.enabled) return;
                 if (selected.kind === "larva") {
                   onProduce?.(selected.id, action.typeId, [selected.id]);
                   return;
@@ -690,7 +880,7 @@ function SelectionPanel({
               ) : (
                 <span className="sel-silhouette is-unit" />
               )}
-            </button>
+            </CatalogSlot>
           ))}
         </DragScroll>
         <button
@@ -699,7 +889,7 @@ function SelectionPanel({
           aria-label="뒤로가기"
           onClick={() => setUnitListOpen(false)}
         >
-          <IconBack size={22} />
+          <IconBack size={28} />
         </button>
       </div>
     );
@@ -784,7 +974,7 @@ function SelectionPanel({
               aria-pressed={moveLit}
               onClick={() => onArmMove?.(moveArmed ? null : [selected.id])}
             >
-              <IconMove size={22} />
+              <IconMove size={28} />
             </button>
           ) : null}
           {canAttack ? (
@@ -797,7 +987,7 @@ function SelectionPanel({
                 onArmAttack?.(attackArmed ? null : [selected.id])
               }
             >
-              <IconAttack size={22} />
+              <IconAttack size={28} />
             </button>
           ) : null}
           {canRally ? (
@@ -825,7 +1015,7 @@ function SelectionPanel({
                 onArmRally?.(selected.id);
               }}
             >
-              <IconRally size={22} />
+              <IconRally size={28} />
             </button>
           ) : null}
           {canProduce ? (
@@ -835,7 +1025,7 @@ function SelectionPanel({
               aria-label="유닛"
               onClick={() => setUnitListOpen(true)}
             >
-              <IconUnit size={22} />
+              <IconUnit size={28} />
             </button>
           ) : null}
           {canBuild ? (
@@ -846,7 +1036,7 @@ function SelectionPanel({
               aria-pressed={buildLit}
               onClick={() => setBuildListOpen(true)}
             >
-              <IconBuild size={22} />
+              <IconBuild size={28} />
             </button>
           ) : null}
           {canHarvest ? (
@@ -859,7 +1049,7 @@ function SelectionPanel({
                 onArmHarvest?.(harvestArmed ? null : [selected.id])
               }
             >
-              <IconHarvest size={22} />
+              <IconHarvest size={28} />
             </button>
           ) : null}
         </div>
@@ -880,6 +1070,13 @@ function isAttacking(e: EntitySnap): boolean {
 function movingUnit(units: EntitySnap[], id: string): boolean {
   const unit = units.find((u) => u.id === id);
   return !!unit && isMoving(unit);
+}
+
+/** 필드 선택 브래킷과 같은 칸 테두리. 아군은 체력, 자원은 노랑, 적은 빨강. */
+function slotToneClass(unit: EntitySnap, meSide: PlayerSnap["side"]): string {
+  if (unit.kind === "mineral" || unit.kind === "gas") return "is-neutral";
+  if (unit.side !== meSide) return "is-enemy";
+  return `is-hp-${hpTone(unit.hp, unit.maxHp)}`;
 }
 
 function attackingUnit(units: EntitySnap[], id: string): boolean {
@@ -1027,6 +1224,28 @@ function larvaCount(entities: EntitySnap[], selected: EntitySnap): number | null
   return n > 0 || producer ? n : (selected.larva ?? n);
 }
 
+type ProduceAction = {
+  typeId: string;
+  name: string;
+  enabled: boolean;
+  shortage: AdvisorCue | null;
+};
+
+function resourceShortage(
+  minerals: number,
+  energy: number,
+  supply: number,
+  supplyMax: number,
+  costM: number,
+  costE: number,
+  costSupply: number
+): AdvisorCue | null {
+  if (minerals < costM) return "minerals";
+  if (energy < costE) return "ether";
+  if (costSupply > 0 && supply + costSupply > supplyMax) return "supply";
+  return null;
+}
+
 function produceOptions(
   me: PlayerSnap,
   selected: EntitySnap,
@@ -1034,7 +1253,7 @@ function produceOptions(
   supply: number,
   supplyMax: number,
   larvaSlots = 1
-): { typeId: string; name: string; enabled: boolean }[] {
+): ProduceAction[] {
   if (selected.side !== me.side || selected.constructing) return [];
   const energy = roundResource(me.energy);
   const minerals = roundResource(me.minerals);
@@ -1045,33 +1264,38 @@ function produceOptions(
       : me.race === "monster"
         ? (larvaCount(entities, selected) ?? 0)
         : 0;
-  const canAfford = (typeId: string) => {
-    const c = unitCost(typeId);
-    if (!c) return false;
-    if (me.race === "monster") {
-      if (idleLarva <= 0) return false;
-    } else if (queued >= 5) {
-      return false;
-    }
-    return (
-      energy >= c.costE &&
-      minerals >= c.costM &&
-      supply + c.supply <= supplyMax
-    );
-  };
   const place =
     selected.kind === "larva"
       ? "larva"
       : selected.kind === "hq"
         ? "hq"
         : selected.typeId;
-  return unitsAt(me.race, place).map((row) => ({
-    typeId: row.typeId,
-    name: row.name,
-    enabled:
-      (!row.needs || hasReadyBuilding(entities, me.side, row.needs)) &&
-      canAfford(row.typeId),
-  }));
+  return unitsAt(me.race, place).map((row) => {
+    const cost = unitCost(row.typeId);
+    const techOk = !row.needs || hasReadyBuilding(entities, me.side, row.needs);
+    const blocked =
+      !cost ||
+      !techOk ||
+      (me.race === "monster" ? idleLarva <= 0 : queued >= 5);
+    const shortage =
+      cost && !blocked
+        ? resourceShortage(
+            minerals,
+            energy,
+            supply,
+            supplyMax,
+            cost.costM,
+            cost.costE,
+            cost.supply
+          )
+        : null;
+    return {
+      typeId: row.typeId,
+      name: row.name,
+      enabled: !blocked && !shortage,
+      shortage,
+    };
+  });
 }
 
 function DragScroll({ children }: { children: ReactNode }) {

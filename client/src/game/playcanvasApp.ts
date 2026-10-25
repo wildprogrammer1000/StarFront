@@ -25,6 +25,8 @@ import {
   FLOOR_MAP_URL,
   getCachedImage,
   preloadBattleAssets,
+  attackSprite,
+  buildingDamageFx,
   dieFxFrames,
   hitFx,
   spriteUrl,
@@ -35,6 +37,7 @@ import {
   clampCameraView,
   homeCameraView,
   viewOrthoHeight,
+  worldToScreenPercent,
   toView as toViewCoords,
 } from "./worldView";
 
@@ -603,8 +606,39 @@ export function createPlayCanvasApp(
     startedAt: number;
   };
   const hitFlashes: HitFlash[] = [];
+  /** 피격 피해 숫자. 맞은 자리에 떠올랐다가 사라진다. */
+  const DMG_POP_LIFE = 0.72;
+  const DMG_POP_RISE = 32;
+  type DmgPop = {
+    el: HTMLSpanElement;
+    x: number;
+    z: number;
+    ox: number;
+    lift: number;
+    startedAt: number;
+  };
+  const dmgPops: DmgPop[] = [];
+  const dmgLayer = document.createElement("div");
+  dmgLayer.className = "dmg-pop-layer";
+  canvas.parentElement?.appendChild(dmgLayer);
+  /** 건물 피해 파티클. 체력이 낮을수록 많고, 페이드가 빠르다. */
+  const DMG_MAX = 8;
+  type DmgParticle = {
+    root: pc.Entity;
+    mat: pc.StandardMaterial;
+    fxType: string;
+    born: number;
+    ox: number;
+    oz: number;
+    scale: number;
+    gen: number;
+  };
+  const dmgParticles = new Map<string, DmgParticle[]>();
   /** 이동 애니메이션 시작 시각. 정지 시 삭제. */
   const walkStarted = new Map<string, number>();
+  /** 타격 순간부터 공격 자세를 유지하는 시각. */
+  const ATTACK_POSE_SEC = 0.2;
+  const attackPoseUntil = new Map<string, number>();
   /** 엔티티에 마지막으로 적용한 스프라이트 typeId (불필요 스왑 방지) */
   const walkApplied = new Map<string, string>();
   const CARGO_SIZE = 0.28;
@@ -807,6 +841,59 @@ export function createPlayCanvasApp(
     }
   }
 
+  function spawnDamagePops(hits: HitSnap[] | undefined): void {
+    if (!hits || !dmgLayer.isConnected) return;
+    const stack = new Map<string, number>();
+    for (let i = 0; i < hits.length; i++) {
+      const hit = hits[i];
+      if (!(hit.damage > 0)) continue;
+      const v = toView(hit.x, hit.z);
+      if (!isFogVisibleAtView(v.x, v.z)) continue;
+      const key = `${Math.round(hit.x * 20)},${Math.round(hit.z * 20)}`;
+      const n = stack.get(key) ?? 0;
+      stack.set(key, n + 1);
+      const el = document.createElement("span");
+      el.className = hit.side === localSide ? "dmg-pop is-ally" : "dmg-pop";
+      el.textContent = String(Math.round(hit.damage));
+      dmgLayer.appendChild(el);
+      dmgPops.push({
+        el,
+        x: hit.x,
+        z: hit.z,
+        ox: (n % 3 - 1) * 14,
+        lift: hit.lift ? 16 : 8,
+        startedAt: performance.now() / 1000,
+      });
+    }
+  }
+
+  function tickDamagePops(now: number): void {
+    for (let i = dmgPops.length - 1; i >= 0; i--) {
+      const pop = dmgPops[i];
+      const t = (now - pop.startedAt) / DMG_POP_LIFE;
+      if (t >= 1) {
+        pop.el.remove();
+        dmgPops.splice(i, 1);
+        continue;
+      }
+      const scr = worldToScreenPercent(
+        pop.x,
+        pop.z,
+        localSide,
+        camAspect,
+        camViewX,
+        camViewZ
+      );
+      const rise = pop.lift + t * DMG_POP_RISE;
+      const fade = t > 0.62 ? Math.max(0, 1 - (t - 0.62) / 0.38) : 1;
+      const scale = t < 0.12 ? 0.72 + (t / 0.12) * 0.38 : 1;
+      pop.el.style.left = `${scr.left}%`;
+      pop.el.style.top = `${scr.top}%`;
+      pop.el.style.opacity = String(fade);
+      pop.el.style.transform = `translate(calc(-50% + ${pop.ox}px), calc(-100% - ${rise}px)) scale(${scale})`;
+    }
+  }
+
   function tickHitFlashes(now: number): void {
     for (let i = hitFlashes.length - 1; i >= 0; i--) {
       const fx = hitFlashes[i];
@@ -820,6 +907,151 @@ export function createPlayCanvasApp(
       fx.mat.opacity = 1 - t;
       fx.mat.update();
     }
+  }
+
+  function hash01(n: number): number {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function dmgPulse(t: number): number {
+    if (t < 0.22) return t / 0.22;
+    if (t > 0.62) return Math.max(0, 1 - (t - 0.62) / 0.38);
+    return 1;
+  }
+
+  function dmgCountAndLife(ratio: number): { count: number; life: number; peak: number } {
+    const missing = 1 - Math.max(0, Math.min(1, ratio));
+    if (missing < 0.04) return { count: 0, life: 1.6, peak: 0 };
+    const count = Math.min(DMG_MAX, Math.max(1, Math.ceil(missing * DMG_MAX)));
+    const life = 1.75 - missing * 1.25;
+    const peak = 0.5 + missing * 0.45;
+    return { count, life, peak };
+  }
+
+  function destroyDmgList(list: DmgParticle[]): void {
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      p.root.destroy();
+      if (typeof p.mat.destroy === "function") p.mat.destroy();
+    }
+  }
+
+  function rollDmgParticle(
+    p: DmgParticle,
+    foot: { w: number; d: number },
+    now: number,
+    life: number
+  ): void {
+    p.gen += 1;
+    const a = hash01(p.gen * 19.1 + p.ox * 3);
+    const b = hash01(p.gen * 7.3 + 4.2);
+    p.ox = (a - 0.5) * foot.w * 0.62;
+    p.oz = (b - 0.5) * foot.d * 0.62;
+    const span = Math.min(foot.w, foot.d);
+    p.scale = span * (0.42 + hash01(p.gen * 3.1) * 0.22);
+    p.born = now - life * hash01(p.gen * 5.5);
+    p.root.setLocalScale(p.scale, 1, p.scale);
+  }
+
+  function makeDmgParticle(fxType: string, now: number, life: number, foot: { w: number; d: number }): DmgParticle | null {
+    const base = materialForSprite(fxType);
+    if (!base) return null;
+    const mat = base.clone() as pc.StandardMaterial;
+    mat.blendType = pc.BLEND_NORMAL;
+    mat.depthWrite = false;
+    mat.cull = pc.CULLFACE_NONE;
+    mat.opacity = 0;
+    mat.update();
+    const root = new pc.Entity("bldg-dmg");
+    root.addComponent("render", { type: "plane" });
+    const mesh = root.render?.meshInstances?.[0];
+    if (mesh) mesh.material = mat;
+    root.setLocalEulerAngles(0, 0, 0);
+    app.root.addChild(root);
+    const p: DmgParticle = {
+      root,
+      mat,
+      fxType,
+      born: now,
+      ox: 0,
+      oz: 0,
+      scale: 0.3,
+      gen: Math.floor(hash01(now * 1000 + dmgParticles.size) * 1000),
+    };
+    rollDmgParticle(p, foot, now, life);
+    return p;
+  }
+
+  function adoptDmgTexture(p: DmgParticle): void {
+    if (p.mat.diffuseMap) return;
+    const base = spriteMats.get(p.fxType);
+    if (!base?.diffuseMap) return;
+    p.mat.diffuseMap = base.diffuseMap;
+    p.mat.emissiveMap = base.emissiveMap;
+    p.mat.opacityMap = base.opacityMap;
+    p.mat.opacityMapChannel = "a";
+  }
+
+  function tickBuildingDamage(now: number): void {
+    const alive = new Set<string>();
+    for (let i = 0; i < lastEntities.length; i++) {
+      const e = lastEntities[i];
+      if (e.kind !== "building" && e.kind !== "hq") continue;
+      const fxType = buildingDamageFx(e.typeId);
+      if (!fxType || e.constructing || e.maxHp <= 0) continue;
+      const ent = entityMap.get(e.id);
+      const visible = !!ent && ent.enabled && fogRevealsEntity(e, localSide);
+      const spec = dmgCountAndLife(e.hp / e.maxHp);
+      if (!visible || spec.count === 0) {
+        const stale = dmgParticles.get(e.id);
+        if (stale) {
+          destroyDmgList(stale);
+          dmgParticles.delete(e.id);
+        }
+        continue;
+      }
+      alive.add(e.id);
+      let list = dmgParticles.get(e.id);
+      if (!list) {
+        list = [];
+        dmgParticles.set(e.id, list);
+      }
+      if (list.length && list[0].fxType !== fxType) {
+        destroyDmgList(list);
+        list = [];
+        dmgParticles.set(e.id, list);
+      }
+      const foot = spriteFoot(e);
+      while (list.length < spec.count) {
+        const p = makeDmgParticle(fxType, now, spec.life, foot);
+        if (!p) break;
+        list.push(p);
+      }
+      while (list.length > spec.count) {
+        const dropped = list.pop();
+        if (dropped) destroyDmgList([dropped]);
+      }
+      const pos = ent.getPosition();
+      for (let n = 0; n < list.length; n++) {
+        const p = list[n];
+        let age = now - p.born;
+        if (age >= spec.life) {
+          rollDmgParticle(p, foot, now, spec.life);
+          age = now - p.born;
+        }
+        const t = Math.max(0, Math.min(1, age / spec.life));
+        adoptDmgTexture(p);
+        p.mat.opacity = dmgPulse(t) * Math.min(0.75, spec.peak);
+        p.mat.update();
+        p.root.setPosition(pos.x + p.ox, GROUND_Y + 0.24 + n * 0.012, pos.z + p.oz);
+      }
+    }
+    dmgParticles.forEach((list, id) => {
+      if (alive.has(id)) return;
+      destroyDmgList(list);
+      dmgParticles.delete(id);
+    });
   }
 
   function tickDieBursts(now: number): void {
@@ -836,6 +1068,37 @@ export function createPlayCanvasApp(
         const mesh = fx.root.render?.meshInstances?.[0];
         if (mesh) mesh.material = fx.mats[frame];
       }
+    }
+  }
+
+  function noteAttackPoses(hits: HitSnap[] | undefined, now: number): void {
+    if (!hits) return;
+    const claimed = new Set<string>();
+    for (let i = 0; i < hits.length; i++) {
+      const hit = hits[i];
+      if (hit.attackerId && claimed.has(hit.attackerId)) continue;
+      let id = hit.attackerId;
+      if (!id) {
+        let best = "";
+        let bestD = Infinity;
+        for (let n = 0; n < lastEntities.length; n++) {
+          const e = lastEntities[n];
+          if (claimed.has(e.id) || e.typeId !== hit.attackerTypeId) continue;
+          if (e.order !== "attack" && e.order !== "attack_move") continue;
+          if (!attackSprite(e.typeId)) continue;
+          const d = (e.x - hit.x) * (e.x - hit.x) + (e.z - hit.z) * (e.z - hit.z);
+          if (d < bestD) {
+            bestD = d;
+            best = e.id;
+          }
+        }
+        id = best;
+      }
+      if (!id || claimed.has(id)) continue;
+      const attacker = lastEntities.find((e) => e.id === id);
+      if (!attacker || !attackSprite(attacker.typeId)) continue;
+      claimed.add(id);
+      attackPoseUntil.set(id, now + ATTACK_POSE_SEC);
     }
   }
 
@@ -863,10 +1126,32 @@ export function createPlayCanvasApp(
     for (let i = 0; i < lastEntities.length; i++) {
       const e = lastEntities[i];
       if (!spriteEntityIds.has(e.id)) continue;
-      const frames = walkFrames(e.typeId);
-      if (!frames) continue;
       const ent = entityMap.get(e.id);
       if (!ent) continue;
+      if (
+        e.constructing &&
+        (e.kind === "building" || e.kind === "hq") &&
+        e.typeId.indexOf("alien_") === 0
+      ) {
+        applyWalkSprite(ent, e.id, "alien_warp");
+        continue;
+      }
+      if (
+        (e.kind === "building" || e.kind === "hq") &&
+        e.typeId.indexOf("alien_") === 0 &&
+        walkApplied.get(e.id) === "alien_warp"
+      ) {
+        applyWalkSprite(ent, e.id, e.typeId);
+      }
+      const frames = walkFrames(e.typeId);
+      const atk = attackSprite(e.typeId);
+      const poseUntil = attackPoseUntil.get(e.id);
+      if (atk && poseUntil != null && now < poseUntil) {
+        applyWalkSprite(ent, e.id, atk);
+        continue;
+      }
+      if (poseUntil != null) attackPoseUntil.delete(e.id);
+      if (!frames) continue;
       const moving = entityIsMoving(e);
       if (!moving) {
         walkStarted.delete(e.id);
@@ -914,6 +1199,8 @@ export function createPlayCanvasApp(
     tickWalkAnims(now);
     tickDieBursts(now);
     tickHitFlashes(now);
+    tickDamagePops(now);
+    tickBuildingDamage(now);
     tickMarkerAnims(step);
     // 랠리 점선: UV 오프셋만 갱신 (드로우콜 1, CPU 부담 최소)
     if (rallyRoot.enabled && rallyLineMat) {
@@ -1499,6 +1786,8 @@ export function createPlayCanvasApp(
       uploadFogTexture();
     }
     spawnHitFlashes(snap.hits);
+    spawnDamagePops(snap.hits);
+    noteAttackPoses(snap.hits, performance.now() / 1000);
     const seen = new Set<string>();
     const now = performance.now() / 1000;
     const moveDur = interpDuration(now);
@@ -1507,6 +1796,12 @@ export function createPlayCanvasApp(
       let ent = entityMap.get(e.id);
       const size = sizeFor(e);
       const foot = spriteFoot(e);
+      const drawType =
+        e.constructing &&
+        (e.kind === "building" || e.kind === "hq") &&
+        e.typeId.indexOf("alien_") === 0
+          ? "alien_warp"
+          : e.typeId;
       const usesSprite = !!spriteUrl(e.typeId);
       const prevType = entityTypeIds.get(e.id);
       if (ent && prevType && prevType !== e.typeId) {
@@ -1516,6 +1811,7 @@ export function createPlayCanvasApp(
         motions.delete(e.id);
         walkStarted.delete(e.id);
         walkApplied.delete(e.id);
+        attackPoseUntil.delete(e.id);
         ent = undefined;
       }
       entityTypeIds.set(e.id, e.typeId);
@@ -1524,7 +1820,7 @@ export function createPlayCanvasApp(
       if (!ent) {
         ent =
           (usesSprite
-            ? createSpriteEntity(e.id, e.typeId, foot.w, foot.d)
+            ? createSpriteEntity(e.id, drawType, foot.w, foot.d)
             : null) ??
           createBox(e.id, size.w, size.h, size.d, colorFor(e));
         app.root.addChild(ent);
@@ -1626,6 +1922,7 @@ export function createPlayCanvasApp(
         entityKinds.delete(id);
         walkStarted.delete(id);
         walkApplied.delete(id);
+        attackPoseUntil.delete(id);
       }
     }
     updateSelectionVisual();
@@ -1686,6 +1983,11 @@ export function createPlayCanvasApp(
       pendingSpriteImgs.length = 0;
       for (let i = 0; i < dieBursts.length; i++) dieBursts[i].root.destroy();
       dieBursts.length = 0;
+      for (let i = 0; i < dmgPops.length; i++) dmgPops[i].el.remove();
+      dmgPops.length = 0;
+      dmgLayer.remove();
+      dmgParticles.forEach((list) => destroyDmgList(list));
+      dmgParticles.clear();
       entityKinds.clear();
       spriteMats.clear();
       ro.disconnect();

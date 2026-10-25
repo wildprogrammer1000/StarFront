@@ -10,6 +10,7 @@ import {
   matchSignal,
   matchTerminate,
 } from "./match/starfrontMatch";
+import { rpcUpdateNickname } from "./player/nicknameRpc";
 import {
   rpcCleanupRooms,
   rpcCreateRoom,
@@ -39,6 +40,7 @@ function InitModule(
   initializer.registerRpc("join_room_by_code", rpcJoinRoomByCode);
   initializer.registerRpc("quick_join", rpcQuickJoin);
   initializer.registerRpc("cleanup_rooms", rpcCleanupRooms);
+  initializer.registerRpc("update_nickname", rpcUpdateNickname);
 
   logger.info("StarFront Nakama runtime loaded (module=%s)", MATCH_MODULE);
 }
