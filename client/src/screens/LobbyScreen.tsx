@@ -15,7 +15,12 @@ import {
   updateAccountDisplayName,
 } from "../player/profile";
 import type { RoomRecord } from "../protocol/rooms";
-import { Banner, Button, TextField } from "../ui/controls";
+import { playCountdownTick } from "../game/countdownSfx";
+import { previewBattleBgm } from "../game/battleBgm";
+import { getSoundSettings, updateSoundSettings } from "../game/soundSettings";
+import { useSoundSettings } from "../game/useSoundSettings";
+import { previewVoice } from "../game/voiceSystem";
+import { Banner, Button, Switch, TextField } from "../ui/controls";
 import {
   IconCheck,
   IconCopy,
@@ -73,6 +78,7 @@ export function LobbyScreen({
   const [createOpen, setCreateOpen] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState(DEFAULT_ROOM_NAME);
   const [userIdCopied, setUserIdCopied] = useState(false);
+  const sound = useSoundSettings();
 
   useEffect(() => {
     let cancelled = false;
@@ -331,6 +337,119 @@ export function LobbyScreen({
                       )}
                     </button>
                   </span>
+                </div>
+                <div className="settings-sound">
+                  <span className="sf-field-label">사운드</span>
+                  <Switch
+                    checked={sound.sfxOn}
+                    label="효과음"
+                    onChange={(next) => {
+                      updateSoundSettings({ sfxOn: next });
+                      if (next && sound.sfxVolume > 0) playCountdownTick();
+                    }}
+                  />
+                  <label
+                    className={
+                      sound.sfxOn ? "settings-volume" : "settings-volume is-off"
+                    }
+                  >
+                    <span className="sr-only">효과음 볼륨</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(sound.sfxVolume * 100)}
+                      disabled={!sound.sfxOn}
+                      aria-valuetext={`${Math.round(sound.sfxVolume * 100)}퍼센트`}
+                      onChange={(e) =>
+                        updateSoundSettings({
+                          sfxVolume: Number(e.target.value) / 100,
+                        })
+                      }
+                      onPointerUp={() => {
+                        const now = getSoundSettings();
+                        if (now.sfxOn && now.sfxVolume > 0) playCountdownTick();
+                      }}
+                    />
+                    <span className="settings-volume-num">
+                      {Math.round(sound.sfxVolume * 100)}
+                    </span>
+                  </label>
+                  <Switch
+                    checked={sound.voiceOn}
+                    label="음성"
+                    onChange={(next) => {
+                      updateSoundSettings({ voiceOn: next });
+                      if (next && sound.voiceVolume > 0) previewVoice();
+                    }}
+                  />
+                  <label
+                    className={
+                      sound.voiceOn
+                        ? "settings-volume"
+                        : "settings-volume is-off"
+                    }
+                  >
+                    <span className="sr-only">음성 볼륨</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(sound.voiceVolume * 100)}
+                      disabled={!sound.voiceOn}
+                      aria-valuetext={`${Math.round(sound.voiceVolume * 100)}퍼센트`}
+                      onChange={(e) =>
+                        updateSoundSettings({
+                          voiceVolume: Number(e.target.value) / 100,
+                        })
+                      }
+                      onPointerUp={() => {
+                        const now = getSoundSettings();
+                        if (now.voiceOn && now.voiceVolume > 0) previewVoice();
+                      }}
+                    />
+                    <span className="settings-volume-num">
+                      {Math.round(sound.voiceVolume * 100)}
+                    </span>
+                  </label>
+                  <Switch
+                    checked={sound.bgmOn}
+                    label="배경음"
+                    onChange={(next) => {
+                      updateSoundSettings({ bgmOn: next });
+                      if (next && sound.bgmVolume > 0) previewBattleBgm();
+                    }}
+                  />
+                  <label
+                    className={
+                      sound.bgmOn ? "settings-volume" : "settings-volume is-off"
+                    }
+                  >
+                    <span className="sr-only">배경음 볼륨</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(sound.bgmVolume * 100)}
+                      disabled={!sound.bgmOn}
+                      aria-valuetext={`${Math.round(sound.bgmVolume * 100)}퍼센트`}
+                      onChange={(e) =>
+                        updateSoundSettings({
+                          bgmVolume: Number(e.target.value) / 100,
+                        })
+                      }
+                      onPointerUp={() => {
+                        const now = getSoundSettings();
+                        if (now.bgmOn && now.bgmVolume > 0) previewBattleBgm();
+                      }}
+                    />
+                    <span className="settings-volume-num">
+                      {Math.round(sound.bgmVolume * 100)}
+                    </span>
+                  </label>
                 </div>
               </div>
             </section>

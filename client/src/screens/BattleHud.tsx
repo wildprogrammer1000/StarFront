@@ -39,7 +39,9 @@ import {
   idsWithCommand,
   selectionHasCommand,
 } from "../game/unitCommands";
-import { Button } from "../ui/controls";
+import { Button, Switch } from "../ui/controls";
+import { updateSoundSettings } from "../game/soundSettings";
+import { useSoundSettings } from "../game/useSoundSettings";
 import { catalogDescription, entityName, raceOf } from "../ui/races";
 import { speakAdvisor } from "../game/battleVoice";
 import type { AdvisorCue } from "../game/voiceLines";
@@ -73,6 +75,36 @@ interface Props {
   onForfeit?: () => void;
 }
 
+function VolumeSlider({
+  label,
+  enabled,
+  volume,
+  onChange,
+}: {
+  label: string;
+  enabled: boolean;
+  volume: number;
+  onChange: (volume: number) => void;
+}) {
+  const shown = Math.round(volume * 100);
+  return (
+    <label className={enabled ? "settings-volume" : "settings-volume is-off"}>
+      <span className="sr-only">{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={shown}
+        disabled={!enabled}
+        aria-valuetext={`${shown}퍼센트`}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+      />
+      <span className="settings-volume-num">{shown}</span>
+    </label>
+  );
+}
+
 function BattleMenu({
   onContinue,
   onForfeit,
@@ -81,6 +113,7 @@ function BattleMenu({
   onForfeit: () => void;
 }) {
   const titleId = "battle-menu-title";
+  const sound = useSoundSettings();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onContinue();
@@ -104,6 +137,39 @@ function BattleMenu({
         <h2 id={titleId} className="battle-menu-title">
           메뉴
         </h2>
+        <Switch
+          checked={sound.sfxOn}
+          label="효과음"
+          onChange={(next) => updateSoundSettings({ sfxOn: next })}
+        />
+        <VolumeSlider
+          label="효과음 볼륨"
+          enabled={sound.sfxOn}
+          volume={sound.sfxVolume}
+          onChange={(sfxVolume) => updateSoundSettings({ sfxVolume })}
+        />
+        <Switch
+          checked={sound.voiceOn}
+          label="음성"
+          onChange={(next) => updateSoundSettings({ voiceOn: next })}
+        />
+        <VolumeSlider
+          label="음성 볼륨"
+          enabled={sound.voiceOn}
+          volume={sound.voiceVolume}
+          onChange={(voiceVolume) => updateSoundSettings({ voiceVolume })}
+        />
+        <Switch
+          checked={sound.bgmOn}
+          label="배경음"
+          onChange={(next) => updateSoundSettings({ bgmOn: next })}
+        />
+        <VolumeSlider
+          label="배경음 볼륨"
+          enabled={sound.bgmOn}
+          volume={sound.bgmVolume}
+          onChange={(bgmVolume) => updateSoundSettings({ bgmVolume })}
+        />
         <Button variant="primary" block onClick={onContinue}>
           계속하기
         </Button>

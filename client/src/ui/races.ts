@@ -30,7 +30,7 @@ export const SUPPLY_CAP = 50;
 export const RACES: Record<RaceId, RaceProfile> = {
   human: {
     id: "human",
-    name: "인간",
+    name: "테론",
     fantasy: "균형 · 방호",
     hq: "사령부",
     worker: "건설로봇",
@@ -43,7 +43,7 @@ export const RACES: Record<RaceId, RaceProfile> = {
   },
   monster: {
     id: "monster",
-    name: "괴물",
+    name: "제르그",
     fantasy: "물량 · 속도",
     hq: "부화장",
     worker: "일벌레",
@@ -56,7 +56,7 @@ export const RACES: Record<RaceId, RaceProfile> = {
   },
   alien: {
     id: "alien",
-    name: "외계인",
+    name: "프로티스",
     fantasy: "단단함 · 강타",
     hq: "연결체",
     worker: "탐사정",

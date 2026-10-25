@@ -13,6 +13,8 @@ import { BattleHud, battleQueuePlaceholder } from "./screens/BattleHud";
 import { BootScreen, ErrorScreen } from "./screens/BootScreen";
 import { previewEnemy, previewEntities, previewMe } from "./screens/fixtures";
 import { speakOrder, speakProducedUnits, speakSelection } from "./game/battleVoice";
+import { playGameStart } from "./game/countdownSfx";
+import { startBattleBgm, stopBattleBgm } from "./game/battleBgm";
 import { stopSpeaking } from "./game/voiceSystem";
 import { LobbyScreen } from "./screens/LobbyScreen";
 import { MatchingScreen, WaitingScreen } from "./screens/MatchFlowScreens";
@@ -339,10 +341,18 @@ export default function App() {
       status === "playing" &&
       (prev === "countdown" || prev === "waiting" || prev === "ended")
     ) {
+      if (prev === "countdown") playGameStart();
       seenEntityIdsRef.current = new Set();
       resetBattleUi();
     }
   }, [snapshot?.status, resetBattleUi]);
+
+  const battleBgmOn =
+    preview === "battle" || (!preview && snapshot?.status === "playing");
+  useEffect(() => {
+    if (battleBgmOn) startBattleBgm();
+    else stopBattleBgm();
+  }, [battleBgmOn]);
 
   useEffect(() => {
     if (leaveUntilRef.current <= Date.now()) return;

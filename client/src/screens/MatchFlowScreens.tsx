@@ -1,4 +1,10 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  playCountdownTick,
+  preloadCountdownTick,
+  stopCountdownTick,
+} from "../game/countdownSfx";
+import { preloadBattleBgm } from "../game/battleBgm";
 import type { PlayerSnap, RaceId } from "../protocol";
 import { Button, MetalSelect } from "../ui/controls";
 import { IconCopy, IconShare } from "../ui/icons";
@@ -66,6 +72,17 @@ export function WaitingScreen({
       : false;
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    preloadCountdownTick();
+    preloadBattleBgm();
+  }, []);
+
+  useEffect(() => {
+    if (!counting || typeof countdown !== "number") return;
+    playCountdownTick();
+    return () => stopCountdownTick();
+  }, [counting, countdown]);
+
   const copyInvite = useCallback(async () => {
     if (!inviteCode) return;
     try {
@@ -96,30 +113,32 @@ export function WaitingScreen({
 
   return (
     <ScreenFill>
-      <header className="room-lobby-head">
-        <h1 className="room-lobby-title">{roomName || "전선"}</h1>
-        {inviteCode ? (
-          <div className="invite-code-row" aria-label="초대 코드">
-            <span className="invite-code">{inviteCode}</span>
-            <button
-              type="button"
-              className="invite-icon-btn"
-              aria-label={copied ? "복사됨" : "초대 코드 복사"}
-              onClick={() => void copyInvite()}
-            >
-              <IconCopy size={16} />
-            </button>
-            <button
-              type="button"
-              className="invite-icon-btn"
-              aria-label="초대 코드 공유"
-              onClick={() => void shareInvite()}
-            >
-              <IconShare size={16} />
-            </button>
-          </div>
-        ) : null}
-      </header>
+      {counting ? null : (
+        <header className="room-lobby-head">
+          <h1 className="room-lobby-title">{roomName || "전선"}</h1>
+          {inviteCode ? (
+            <div className="invite-code-row" aria-label="초대 코드">
+              <span className="invite-code">{inviteCode}</span>
+              <button
+                type="button"
+                className="invite-icon-btn"
+                aria-label={copied ? "복사됨" : "초대 코드 복사"}
+                onClick={() => void copyInvite()}
+              >
+                <IconCopy size={16} />
+              </button>
+              <button
+                type="button"
+                className="invite-icon-btn"
+                aria-label="초대 코드 공유"
+                onClick={() => void shareInvite()}
+              >
+                <IconShare size={16} />
+              </button>
+            </div>
+          ) : null}
+        </header>
+      )}
 
       {counting ? (
         <div className="room-countdown" aria-live="polite">

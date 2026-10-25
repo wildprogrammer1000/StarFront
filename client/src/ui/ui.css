@@ -1574,6 +1574,56 @@ button.sel-multi-cell.is-pick:focus-visible {
   color: var(--phosphor-text);
 }
 
+.settings-sound {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-top: 1px solid rgba(125, 255, 74, 0.28);
+}
+
+.settings-sound .sf-field-label {
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--btn-ink);
+}
+
+.settings-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding-left: 2px;
+}
+
+.settings-volume.is-off {
+  opacity: 0.45;
+}
+
+.settings-volume input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--phosphor);
+  cursor: pointer;
+}
+
+.settings-volume input[type="range"]:disabled {
+  cursor: default;
+}
+
+.settings-volume-num {
+  flex: none;
+  width: 2.4em;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--phosphor-text);
+}
+
 .bnet-list {
   display: flex;
   flex-direction: column;
@@ -2241,6 +2291,10 @@ button.sel-multi-cell.is-pick:focus-visible {
   font-weight: 700;
   text-align: center;
   color: var(--phosphor-text);
+}
+
+.battle-menu-panel .settings-volume {
+  margin: -4px 0 4px;
 }
 
 .hp-col {

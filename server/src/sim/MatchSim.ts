@@ -2650,17 +2650,24 @@ function targetInWeaponRange(
   return dist2(ent.x, ent.z, target.x, target.z) <= reach * reach;
 }
 
-/** 건물 공격은 점유 칸 밖, 접근 방향의 사거리 지점을 목표로 한다. */
+/** 도착 판정 오차. 이 안에 서면 무기 사거리 안이어야 한다. */
+const APPROACH_STOP = 0.05;
+
+/**
+ * 공격이 나가는 지점. 목표 중심이 아니라, 설 수 있고 사거리 안인 자리.
+ * 건물·HQ는 발자국 가장자리에서, 유닛은 중심에서 잰다.
+ */
 function attackApproach(
+  sim: MatchSim,
   ent: SimEntity,
   target: SimEntity,
   range: number
 ): { x: number; z: number; stop: number } {
   const reach = weaponRange(ent, target, range);
-  if (target.kind !== "building" && target.kind !== "hq") {
-    return { x: target.x, z: target.z, stop: reach };
-  }
-  const half = entityHalfExtents(target);
+  const inset = APPROACH_STOP + 0.02;
+  let gap = reach - inset;
+  if (gap < 0.02) gap = 0.02;
+
   let dx = ent.x - target.x;
   let dz = ent.z - target.z;
   let len = Math.sqrt(dx * dx + dz * dz);
@@ -2669,21 +2676,59 @@ function attackApproach(
     dz = 1;
     len = 1;
   }
-  const adx = Math.abs(dx);
-  const adz = Math.abs(dz);
-  const tx = adx < 1e-6 ? 1e9 : half.x / adx;
-  const tz = adz < 1e-6 ? 1e9 : half.z / adz;
-  const t = tx < tz ? tx : tz;
-  const stand = meleeAttacker(ent.typeId)
-    ? reach
-    : range > 0.2
-      ? range * 0.85
-      : 0.2;
-  return {
-    x: target.x + dx * t + (dx / len) * stand,
-    z: target.z + dz * t + (dz / len) * stand,
-    stop: 0.12,
-  };
+  const ux = dx / len;
+  const uz = dz / len;
+
+  let ox = target.x;
+  let oz = target.z;
+  const structure = target.kind === "building" || target.kind === "hq";
+  if (structure) {
+    const half = entityHalfExtents(target);
+    const adx = Math.abs(dx);
+    const adz = Math.abs(dz);
+    const tx = adx < 1e-6 ? 1e9 : half.x / adx;
+    const tz = adz < 1e-6 ? 1e9 : half.z / adz;
+    const t = tx < tz ? tx : tz;
+    ox = target.x + dx * t;
+    oz = target.z + dz * t;
+  }
+
+  const angles = [0, 0.55, -0.55, 1.15, -1.15, 1.8, -1.8, 2.5, -2.5, 3.1416];
+  let bestX = ox + ux * gap;
+  let bestZ = oz + uz * gap;
+  let bestScore = 1e9;
+  let found = false;
+  for (let ai = 0; ai < angles.length; ai++) {
+    const ang = angles[ai];
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const rx = ux * c - uz * s;
+    const rz = ux * s + uz * c;
+    for (let step = 0; step <= 8; step++) {
+      const dist = gap - step * (MAP.cellSize * 0.35);
+      if (dist < 0.02) break;
+      const x = ox + rx * dist;
+      const z = oz + rz * dist;
+      if (!canStand(sim, ent, x, z)) continue;
+      const inside = structure
+        ? distToFootprint(x, z, target) <= reach - 0.01
+        : dist2(x, z, target.x, target.z) <= (reach - 0.01) * (reach - 0.01);
+      if (!inside) continue;
+      const score = dist2(ent.x, ent.z, x, z) + ai * 0.25;
+      if (score < bestScore) {
+        found = true;
+        bestScore = score;
+        bestX = x;
+        bestZ = z;
+      }
+      break;
+    }
+  }
+  if (!found) {
+    bestX = ox + ux * gap;
+    bestZ = oz + uz * gap;
+  }
+  return { x: bestX, z: bestZ, stop: APPROACH_STOP };
 }
 
 function tickIdleAttack(sim: MatchSim): void {
@@ -2741,13 +2786,17 @@ function tickUnitOrders(sim: MatchSim): void {
         replaceEntity(sim, e);
         return;
       }
-      const inRange = targetInWeaponRange(e, target, profile.range);
+      let inRange = targetInWeaponRange(e, target, profile.range);
       if (!inRange) {
-        const goal = attackApproach(e, target, profile.range);
+        const goal = attackApproach(sim, e, target, profile.range);
         moveEntityToward(sim, e, goal.x, goal.z, profile.speed, goal.stop);
+        inRange = targetInWeaponRange(e, target, profile.range);
+      }
+      if (!inRange) {
         replaceEntity(sim, e);
         return;
       }
+      clearNav(e);
       strikeTarget(sim, e, target, profile, dead);
       if (!sim.entities[target.id] || target.hp <= 0) {
         clearOrder(e);
@@ -2780,9 +2829,19 @@ function tickUnitOrders(sim: MatchSim): void {
         target = findEngageTarget(sim, e, profile.range);
         if (target) e.orderTargetId = target.id;
       }
+      // 잠근 타겟이 사거리 밖이면 공격 자리까지 붙는다. 사거리 안이면 치면서 좌표로 간다.
+      if (target && !targetInWeaponRange(e, target, profile.range)) {
+        const goal = attackApproach(sim, e, target, profile.range);
+        moveEntityToward(sim, e, goal.x, goal.z, profile.speed, goal.stop);
+        if (targetInWeaponRange(e, target, profile.range)) {
+          clearNav(e);
+          strikeTarget(sim, e, target, profile, dead);
+        }
+        replaceEntity(sim, e);
+        return;
+      }
       const inRange = !!(target && targetInWeaponRange(e, target, profile.range));
       if (inRange && target) strikeTarget(sim, e, target, profile, dead);
-      // 사거리 안이어도 지정 좌표까지는 이동과 같이 걸어간다.
       const arrived = moveEntityToward(sim, e, ox, oz, profile.speed, 0.2);
       if (arrived && !inRange) clearOrder(e);
       replaceEntity(sim, e);
@@ -3548,7 +3607,8 @@ function hatchEgg(sim: MatchSim, egg: SimEntity): void {
     hq && isFiniteNum(hq.rallyX) && isFiniteNum(hq.rallyZ);
   const kind = isWorker ? "worker" : "unit";
   const count = typeId === "monster_blade" ? 2 : 1;
-  const rally = !isWorker && hasRally && hq ? hq : null;
+  // 전투 유닛과 일꾼 모두 소속 부화장 랠리로 이동한다.
+  const rally = hasRally && hq ? hq : null;
   // 알 id 를 첫 유닛이 물려받는다. 선택 중이던 알이 그 유닛으로 이어진다.
   delete egg.morphType;
   delete egg.morphLeft;

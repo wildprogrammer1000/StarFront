@@ -1,3 +1,4 @@
+import { subscribeSoundSettings, voiceGain } from "./soundSettings";
 import { VOICE_LANG, type VoiceLine } from "./voiceLines";
 
 /** unit 은 부관이 말하는 동안 나오지 않는다. advisor 는 유닛 대사를 끊지만, 이미 재생 중이면 다시 시작하지 않는다. */
@@ -58,11 +59,13 @@ if (typeof window !== "undefined" && window.speechSynthesis) {
 export function speak(request: SpeakRequest): string | null {
   if (request.lines.length === 0) return null;
   const priority = request.priority ?? "unit";
+  const gain = voiceGain();
+  if (priority === "unit" && gain <= 0) return null;
   if (advisorSpeaking) return null;
 
   const line = pickLine(request.poolKey ?? request.voiceName, request.lines);
   const speech = synth();
-  if (!speech) return line.text;
+  if (!speech || gain <= 0) return line.text;
 
   const gen = ++generation;
   advisorSpeaking = priority === "advisor";
@@ -72,6 +75,7 @@ export function speak(request: SpeakRequest): string | null {
     if (gen !== generation) return;
     const utter = new SpeechSynthesisUtterance(line.text);
     utter.lang = VOICE_LANG;
+    utter.volume = gain;
     utter.pitch = request.pitch ?? 1;
     utter.rate = request.rate ?? 1;
     const voice = findVoice(request.voiceName);
@@ -92,3 +96,19 @@ export function stopSpeaking(): void {
   advisorSpeaking = false;
   synth()?.cancel();
 }
+
+/** 설정 탭에서 음성 크기를 확인할 때. */
+export function previewVoice(): void {
+  if (voiceGain() <= 0) return;
+  stopSpeaking();
+  speak({
+    voiceName: "Reed",
+    lines: [{ id: "sound-preview", text: "음성 확인" }],
+    poolKey: "sound-preview",
+    priority: "unit",
+  });
+}
+
+subscribeSoundSettings(() => {
+  if (voiceGain() <= 0) stopSpeaking();
+});
