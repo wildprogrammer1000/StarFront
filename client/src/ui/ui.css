@@ -3,8 +3,7 @@
 }
 
 html,
-body,
-.app-root {
+body {
   margin: 0;
   width: 100%;
   height: 100%;
@@ -17,7 +16,9 @@ body,
   width: 100%;
   height: 100%;
   margin: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   overflow: hidden;
+  background: var(--bg);
 }
 
 button,
@@ -57,28 +58,11 @@ button.is-short {
   display: grid;
   place-items: center;
   position: relative;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
   background: var(--bg);
-}
-
-/* iOS 홈 화면 PWA는 콘텐츠가 상태바 뒤에 있으면 그 위를 시스템 블러로 덮는다.
-   화면 맨 위(4px 이내)에 높이 6px 이상·너비 80% 이상의 불투명 고정 막이 있으면
-   블러 대신 이 배경색을 단색으로 쓴다. 안전 영역보다 낮으면 캔버스가 샘플에 섞인다. */
-.pwa-status-bar {
-  display: none;
-}
-
-@media (display-mode: standalone) {
-  .pwa-status-bar {
-    display: block;
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 80;
-    width: 100%;
-    height: max(env(safe-area-inset-top, 0px), 11px);
-    background-color: var(--bg, #05070a);
-    pointer-events: none;
-  }
 }
 
 .stage {
@@ -301,10 +285,10 @@ button.is-short {
 }
 
 /* 하단 UI. 기본 112px. 내용이 더 크면 그만큼 늘어난다.
- * safe는 홈 인디케이터 영역. 조작 칸 높이는 그대로 두고 아래에 붙인다. */
+ * 홈 인디케이터는 #root padding이 담당한다. */
 .stage-bottom-ui {
   --stage-bottom-h: 112px;
-  --stage-bottom-safe: env(safe-area-inset-bottom, 0px);
+  --stage-bottom-safe: 0px;
   /* border-top 1px는 바깥으로 빼서 내용 높이를 112px로 유지한다. */
   flex: 0 0 calc(var(--stage-bottom-h) + var(--stage-bottom-safe) + 1px);
   height: calc(var(--stage-bottom-h) + var(--stage-bottom-safe) + 1px);
@@ -1235,7 +1219,7 @@ button.sel-multi-cell.is-pick:focus-visible {
 
 /* 로비 탭이 아닌 화면은 예전 HUD 여백을 내용에만 둔다. */
 .hud:not(.hud-game) .screen-fill:not(:has(.lobby-nav)) {
-  padding: 12px 12px max(14px, env(safe-area-inset-bottom, 0px));
+  padding: 12px 12px 14px;
 }
 
 .screen-fill {
@@ -2912,7 +2896,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   padding:
     max(24px, env(safe-area-inset-top, 0px))
     20px
-    max(20px, env(safe-area-inset-bottom, 0px));
+    20px;
   background: var(--btn-bg);
   border: none;
   box-shadow: none;
