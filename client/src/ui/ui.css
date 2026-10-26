@@ -197,7 +197,7 @@ button.is-short {
   position: absolute;
   z-index: 6;
   left: 50%;
-  bottom: 14px;
+  bottom: 120px;
   transform: translateX(-50%);
   margin: 0;
   max-width: calc(100% - 24px);
