@@ -43,7 +43,36 @@ type MatchPhase = "search" | "join";
 
 const RACE_KEY = "starfront_race";
 const OPPONENT_LEFT_TEXT = "상대플레이어가 나갔습니다.";
-const OPPONENT_LEFT_RESULT_MS = 3000;
+/** 퇴장·제거 문구 뒤 결과 화면까지 기다리는 시간 */
+const RESULT_HOLD_MS = 3000;
+
+function playerNoticeName(player: PlayerSnap): string {
+  const name = (player.displayName || "").trim();
+  return name || defaultNickname(player.userId);
+}
+
+/** 건물이 없어 탈락한 플레이어. 본인·상대 모두 같은 문장. 동시 탈락은 본인부터. */
+function eliminationNotice(
+  snapshot: MatchSnapshot,
+  selfUserId: string | undefined
+): string {
+  const winner = snapshot.winnerSide;
+  if (!winner) return "";
+  const gone = snapshot.players.filter((player) => {
+    if (winner === "draw") return true;
+    return player.side !== winner;
+  });
+  gone.sort((a, b) => {
+    if (selfUserId && a.userId === selfUserId) return -1;
+    if (selfUserId && b.userId === selfUserId) return 1;
+    return 0;
+  });
+  const lines: string[] = [];
+  for (let i = 0; i < gone.length; i++) {
+    lines.push(`${playerNoticeName(gone[i])} 플레이어가 제거되었습니다`);
+  }
+  return lines.join("\n");
+}
 
 function opponentLeftDuringPlay(
   prev: MatchSnapshot | null,
@@ -209,6 +238,7 @@ export default function App() {
   const pinnedSideRef = useRef<Side | null>(null);
   const leftEnemyRef = useRef<PlayerSnap | undefined>(undefined);
   const leaveUntilRef = useRef(0);
+  const holdNoticeRef = useRef<string | null>(null);
   const [leaveTick, setLeaveTick] = useState(0);
   const aiMatchRef = useRef<LocalAiMatch | null>(null);
   const aiUserIdRef = useRef<string | null>(null);
@@ -377,6 +407,7 @@ export default function App() {
     const wait = leaveUntilRef.current - Date.now();
     const id = window.setTimeout(() => {
       leaveUntilRef.current = 0;
+      holdNoticeRef.current = null;
       setLeaveTick((n) => n + 1);
     }, wait);
     return () => window.clearTimeout(id);
@@ -513,6 +544,7 @@ export default function App() {
     pinnedSideRef.current = null;
     leftEnemyRef.current = undefined;
     leaveUntilRef.current = 0;
+    holdNoticeRef.current = null;
   } else if (
     snapshot.status === "playing" &&
     me?.side &&
@@ -526,15 +558,28 @@ export default function App() {
     snapshot,
     selfUserId
   );
+  const prevLiveSnap = prevLiveSnapRef.current;
   if (opponentDropped && leaveUntilRef.current === 0) {
-    leaveUntilRef.current = Date.now() + OPPONENT_LEFT_RESULT_MS;
-    const foe = prevLiveSnapRef.current?.players.find(
-      (p) => p.userId !== selfUserId
-    );
+    leaveUntilRef.current = Date.now() + RESULT_HOLD_MS;
+    holdNoticeRef.current = OPPONENT_LEFT_TEXT;
+    const foe = prevLiveSnap?.players.find((p) => p.userId !== selfUserId);
     if (foe) leftEnemyRef.current = foe;
+  }
+  if (
+    !opponentDropped &&
+    prevLiveSnap?.status === "playing" &&
+    snapshot?.status === "ended" &&
+    leaveUntilRef.current === 0
+  ) {
+    const notice = eliminationNotice(snapshot, selfUserId);
+    if (notice) {
+      leaveUntilRef.current = Date.now() + RESULT_HOLD_MS;
+      holdNoticeRef.current = notice;
+    }
   }
   prevLiveSnapRef.current = snapshot;
   const deferResult = leaveUntilRef.current > Date.now();
+  const holdNotice = deferResult ? holdNoticeRef.current : null;
   const battleSide = pinnedSideRef.current ?? me?.side ?? null;
   const resultEnemy = enemy ?? leftEnemyRef.current;
   const stageRace = me?.race ?? race;
@@ -736,7 +781,7 @@ export default function App() {
             : undefined
         }
         localSide={preview ? "bottom" : battleSide}
-        systemNotice={!preview && deferResult ? OPPONENT_LEFT_TEXT : null}
+        systemNotice={!preview && holdNotice ? holdNotice : null}
         placing={!!placeType && (preview === "battle" || snapshot?.status === "playing")}
         placeType={placeType}
         placeWorkerId={
