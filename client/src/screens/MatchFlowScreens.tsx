@@ -5,6 +5,7 @@ import {
   stopCountdownTick,
 } from "../game/countdownSfx";
 import { preloadBattleBgm } from "../game/battleBgm";
+import type { BotDifficulty } from "@shared/sim/bot";
 import type { PlayerSnap, RaceId } from "../protocol";
 import { Button, MetalSelect } from "../ui/controls";
 import { IconCopy, IconShare } from "../ui/icons";
@@ -15,6 +16,12 @@ const RACE_OPTIONS = RACE_ORDER.map((id) => ({
   value: id,
   label: RACES[id].name,
 }));
+
+const DIFFICULTY_OPTIONS: { value: BotDifficulty; label: string }[] = [
+  { value: "easy", label: "쉬움" },
+  { value: "normal", label: "보통" },
+  { value: "hard", label: "어려움" },
+];
 
 /** 로컬 AI 플레이어. shared/sim/bot.ts 와 같다. */
 const BOT_USER_ID = "bot";
@@ -51,6 +58,7 @@ export function WaitingScreen({
   race,
   onRace,
   onBotRace,
+  onBotDifficulty,
   countdown,
   canStart,
   onStart,
@@ -64,6 +72,7 @@ export function WaitingScreen({
   race: RaceId;
   onRace: (race: RaceId) => void;
   onBotRace?: (race: RaceId) => void;
+  onBotDifficulty?: (id: BotDifficulty) => void;
   countdown?: number;
   canStart: boolean;
   onStart: () => void;
@@ -76,6 +85,7 @@ export function WaitingScreen({
       ? countdown > 0
       : false;
   const [copied, setCopied] = useState(false);
+  const [difficulty, setDifficulty] = useState<BotDifficulty>("normal");
   const [botRacePick, setBotRacePick] = useState<RaceId | null>(null);
   const botPlayer = players.find((p) => p.userId === BOT_USER_ID);
   useEffect(() => {
@@ -219,6 +229,18 @@ export function WaitingScreen({
           </section>
 
           <div className="room-lobby-actions">
+            {onBotDifficulty ? (
+              <MetalSelect
+                className="race-select-wrap"
+                label="난이도"
+                value={difficulty}
+                options={DIFFICULTY_OPTIONS}
+                onChange={(next) => {
+                  setDifficulty(next);
+                  onBotDifficulty(next);
+                }}
+              />
+            ) : null}
             {isHost ? (
               <Button
                 variant="primary"

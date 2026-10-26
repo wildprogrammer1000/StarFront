@@ -5,13 +5,24 @@
 import type { PlayerInput, RaceId, Side } from "@shared/protocol";
 import { MAP, NEUTRAL, WORLD } from "./constants";
 import type { MatchSim } from "./MatchSim";
-import { buildingDef, footprintOf } from "./roster";
+import { buildingDef, footprintOf, unitDef } from "./roster";
 
 export const BOT_USER_ID = "bot";
 const THINK_TICKS = 15;
 const WORKER_CAP = 8;
-const ARMY_ATTACK = 4;
+const HARASS_AT = 2;
+const COMMIT_AT = 6;
 const SUPPLY_CAP = 50;
+const CONTACT = 3.5;
+
+export type BotDifficulty = "easy" | "normal" | "hard";
+
+/** 쉬움 4초, 보통 1.5초, 어려움 0.4초. 틱은 10Hz. */
+export function thinkTicksFor(id: BotDifficulty): number {
+  if (id === "easy") return 40;
+  if (id === "hard") return 4;
+  return THINK_TICKS;
+}
 
 type Ent = MatchSim["entities"][string];
 type Player = MatchSim["players"][string];
@@ -176,18 +187,29 @@ function oneLarva(ents: Ent[]): Ent | null {
   return null;
 }
 
+function producerType(unitType: string): string | null {
+  if (
+    unitType === "human_rifleman" ||
+    unitType === "human_firebat" ||
+    unitType === "human_medic"
+  ) {
+    return "human_barracks";
+  }
+  if (unitType === "alien_guardian" || unitType === "alien_dragoon") {
+    return "alien_gate";
+  }
+  return null;
+}
+
 function train(sim: MatchSim, player: Player, ents: Ent[], unitType: string): void {
   const hq = findHq(ents);
   if (!hq) return;
   let buildingId = hq.id;
-  if (unitType === "human_rifleman") {
-    const rax = readyBuilding(ents, "human_barracks");
-    if (!rax || queueLen(rax) >= 2) return;
-    buildingId = rax.id;
-  } else if (unitType === "alien_guardian") {
-    const gate = readyBuilding(ents, "alien_gate");
-    if (!gate || queueLen(gate) >= 2) return;
-    buildingId = gate.id;
+  const producedAt = producerType(unitType);
+  if (producedAt) {
+    const source = readyBuilding(ents, producedAt);
+    if (!source || queueLen(source) >= 2) return;
+    buildingId = source.id;
   } else if (player.race !== "monster") {
     if (queueLen(hq) >= 1) return;
   }
@@ -226,22 +248,322 @@ function sendMiners(sim: MatchSim, player: Player, ents: Ent[]): void {
   }
 }
 
-function attackMoveArmy(sim: MatchSim, player: Player, ents: Ent[]): void {
-  if (combatCount(ents) < ARMY_ATTACK) return;
-  const foe = listSide(sim, enemySide(player.side));
-  const hq = findHq(foe);
-  if (!hq) return;
+function dist(a: Ent, b: Ent): number {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+function gasType(race: RaceId): string {
+  if (race === "monster") return "monster_extractor";
+  if (race === "alien") return "alien_assimilator";
+  return "human_refinery";
+}
+
+function techType(race: RaceId): string {
+  if (race === "monster") return "monster_hydra_den";
+  if (race === "alien") return "alien_cyber";
+  return "human_academy";
+}
+
+function basicUnit(race: RaceId): string {
+  if (race === "monster") return "monster_blade";
+  if (race === "alien") return "alien_guardian";
+  return "human_rifleman";
+}
+
+function techUnit(race: RaceId): string {
+  if (race === "monster") return "monster_hydra";
+  if (race === "alien") return "alien_dragoon";
+  return "human_firebat";
+}
+
+function isRanged(typeId: string): boolean {
+  return (
+    typeId === "human_rifleman" ||
+    typeId === "monster_hydra" ||
+    typeId === "alien_dragoon"
+  );
+}
+
+function weaponRange(typeId: string): number {
+  if (typeId === "alien_dragoon") return 1.92;
+  if (isRanged(typeId)) return 2.4;
+  return 0.6;
+}
+
+function canAfford(player: Player, typeId: string): boolean {
+  const def = unitDef(typeId);
+  if (!def) return false;
+  return player.minerals >= def.costM && player.energy >= def.costE;
+}
+
+function countMade(ents: Ent[], typeId: string): number {
+  let n = 0;
   for (let i = 0; i < ents.length; i++) {
     const e = ents[i];
-    if (e.kind !== "unit" || e.typeId === "monster_sac") continue;
-    if (e.order === "attack" || e.order === "attack_move") continue;
-    sim.applyInput(player.userId, {
-      type: "order_attack_move",
-      unitId: e.id,
-      x: hq.x,
-      z: hq.z,
-    });
+    if (e.typeId === typeId && e.hp > 0) n += 1;
+    else if (e.kind === "egg" && e.morphType === typeId) n += 1;
   }
+  return n;
+}
+
+function tryBuildAt(
+  sim: MatchSim,
+  player: Player,
+  typeId: string,
+  ents: Ent[],
+  x: number,
+  z: number
+): boolean {
+  const def = buildingDef(typeId);
+  if (!def || def.race !== player.race) return false;
+  if (player.minerals < def.costM || player.energy < def.costE) return false;
+  const worker = builder(ents);
+  if (!worker) return false;
+  sim.applyInput(player.userId, {
+    type: "place_building",
+    buildingType: typeId,
+    x: x,
+    z: z,
+    workerId: worker.id,
+  });
+  return worker.morphBuild === typeId;
+}
+
+function ownVent(ents: Ent[]): Ent | null {
+  for (let i = 0; i < ents.length; i++) {
+    if (ents[i].kind === "gas" && ents[i].hp > 0) return ents[i];
+  }
+  return null;
+}
+
+function sendGasMiners(sim: MatchSim, player: Player, ents: Ent[]): void {
+  const gasId = gasType(player.race);
+  const building = readyBuilding(ents, gasId);
+  if (!building) return;
+  let onGas = 0;
+  for (let i = 0; i < ents.length; i++) {
+    const e = ents[i];
+    if (e.kind === "worker" && e.harvestSource === "gas") onGas += 1;
+  }
+  if (onGas >= 2) return;
+  for (let i = 0; i < ents.length; i++) {
+    const e = ents[i];
+    if (e.kind !== "worker" || e.hp <= 0) continue;
+    if (e.id === sim.botScoutId) continue;
+    if (e.harvestSource === "gas") continue;
+    if (e.morphBuild || e.busyOn) continue;
+    if (!e.harvestPhase) continue;
+    sim.applyInput(player.userId, {
+      type: "order_harvest",
+      workerId: e.id,
+      mineralId: building.id,
+    });
+    return;
+  }
+}
+
+function stepTech(sim: MatchSim, player: Player, ents: Ent[]): void {
+  if (workerCount(ents) < 6) return;
+  const gasId = gasType(player.race);
+  if (!hasType(ents, gasId, true)) {
+    const vent = ownVent(ents);
+    if (vent) tryBuildAt(sim, player, gasId, ents, vent.x, vent.z);
+    return;
+  }
+  if (!readyBuilding(ents, gasId)) return;
+  const tech = techType(player.race);
+  if (hasType(ents, tech, true)) return;
+  const needs =
+    player.race === "monster"
+      ? "monster_hatchery"
+      : player.race === "alien"
+        ? "alien_gate"
+        : "human_barracks";
+  if (!readyBuilding(ents, needs)) return;
+  tryBuild(sim, player, tech, ents);
+}
+
+function nextArmy(player: Player, ents: Ent[]): string {
+  const basic = basicUnit(player.race);
+  const advanced = techUnit(player.race);
+  const tech = techType(player.race);
+  if (readyBuilding(ents, tech) && canAfford(player, advanced)) {
+    if (countMade(ents, advanced) < countMade(ents, basic)) return advanced;
+  }
+  return basic;
+}
+
+function scout(sim: MatchSim, player: Player, ents: Ent[]): void {
+  const foe = listSide(sim, enemySide(player.side));
+  const enemyHq = findHq(foe);
+  const home = findHq(ents);
+  if (!enemyHq || !home) return;
+  const scoutId = sim.botScoutId;
+  const current = scoutId ? sim.entities[scoutId] : null;
+  if (current && current.hp > 0) {
+    if (dist(current, enemyHq) < 2.4) {
+      sim.botScoutSeen = 1;
+      sim.botScoutId = "";
+      sim.applyInput(player.userId, {
+        type: "order_move",
+        unitId: current.id,
+        x: home.x,
+        z: home.z,
+      });
+    }
+    return;
+  }
+  if (sim.botScoutSeen) return;
+  if (workerCount(ents) < 5) return;
+  let pick: Ent | null = null;
+  for (let i = 0; i < ents.length; i++) {
+    const e = ents[i];
+    if (e.kind !== "worker" || e.hp <= 0) continue;
+    if (e.morphBuild || e.busyOn) continue;
+    if (e.harvestSource === "gas") continue;
+    if (e.harvestPhase !== "to_mineral" && e.harvestPhase !== "mining") continue;
+    pick = e;
+  }
+  if (!pick) return;
+  const z = enemyHq.z + (player.side === "bottom" ? -2.2 : 2.2);
+  sim.botScoutId = pick.id;
+  sim.applyInput(player.userId, {
+    type: "order_move",
+    unitId: pick.id,
+    x: enemyHq.x,
+    z: z,
+  });
+}
+
+function nearest(
+  from: Ent,
+  foes: Ent[],
+  maxDist: number,
+  want: (e: Ent) => boolean
+): Ent | null {
+  let best: Ent | null = null;
+  let bestD = maxDist;
+  for (let i = 0; i < foes.length; i++) {
+    const e = foes[i];
+    if (!want(e)) continue;
+    const d = dist(from, e);
+    if (d < bestD) {
+      best = e;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+function focusTarget(from: Ent, foes: Ent[]): Ent | null {
+  let best: Ent | null = null;
+  let bestRatio = 2;
+  for (let i = 0; i < foes.length; i++) {
+    const e = foes[i];
+    if (e.kind !== "unit" && e.kind !== "worker") continue;
+    if (e.typeId === "monster_sac") continue;
+    if (dist(from, e) > CONTACT) continue;
+    const ratio = e.maxHp > 0 ? e.hp / e.maxHp : 1;
+    if (ratio < bestRatio) {
+      best = e;
+      bestRatio = ratio;
+    }
+  }
+  if (best) return best;
+  return nearest(from, foes, CONTACT, function (e) {
+    return e.kind === "building" || e.kind === "hq";
+  });
+}
+
+function issueAttack(sim: MatchSim, player: Player, unit: Ent, target: Ent): void {
+  if (unit.order === "attack" && unit.orderTargetId === target.id) return;
+  sim.applyInput(player.userId, {
+    type: "order_attack",
+    unitId: unit.id,
+    targetId: target.id,
+  });
+}
+
+function controlArmy(sim: MatchSim, player: Player, ents: Ent[]): void {
+  const foes = listSide(sim, enemySide(player.side));
+  const enemyHq = findHq(foes);
+  const home = findHq(ents);
+  if (!enemyHq || !home) return;
+  const army = combatCount(ents);
+  const seen = sim.botScoutSeen === 1;
+  for (let i = 0; i < ents.length; i++) {
+    const e = ents[i];
+    if (e.kind !== "unit" || e.hp <= 0) continue;
+    if (e.typeId === "monster_sac") continue;
+    if (e.typeId === "human_medic") {
+      if (!e.order) {
+        const friend = nearest(e, ents, 30, function (u) {
+          return u.kind === "unit" && u.typeId !== "monster_sac" && u.typeId !== "human_medic";
+        });
+        if (friend) {
+          sim.applyInput(player.userId, {
+            type: "order_move",
+            unitId: e.id,
+            x: friend.x,
+            z: friend.z,
+          });
+        }
+      }
+      continue;
+    }
+    const ratio = e.maxHp > 0 ? e.hp / e.maxHp : 1;
+    if (ratio < 0.35) {
+      if (e.order !== "move") {
+        sim.applyInput(player.userId, {
+          type: "order_move",
+          unitId: e.id,
+          x: home.x,
+          z: home.z,
+        });
+      }
+      continue;
+    }
+    const threat = nearest(e, foes, weaponRange(e.typeId) * 0.7, function (u) {
+      return (u.kind === "unit" || u.kind === "worker") && u.typeId !== "monster_sac";
+    });
+    if (isRanged(e.typeId) && threat && e.order === "attack") {
+      const dx = e.x - threat.x;
+      const dz = e.z - threat.z;
+      const len = Math.sqrt(dx * dx + dz * dz) || 1;
+      sim.applyInput(player.userId, {
+        type: "order_move",
+        unitId: e.id,
+        x: e.x + (dx / len) * 1.4,
+        z: e.z + (dz / len) * 1.4,
+      });
+      continue;
+    }
+    const focus = focusTarget(e, foes);
+    if (focus) {
+      issueAttack(sim, player, e, focus);
+      continue;
+    }
+    if (seen && army < COMMIT_AT) {
+      const worker = nearest(e, foes, 40, function (u) {
+        return u.kind === "worker";
+      });
+      if (worker && army >= HARASS_AT) {
+        issueAttack(sim, player, e, worker);
+        continue;
+      }
+    }
+    if (army >= 4 && e.order !== "attack" && e.order !== "attack_move") {
+      sim.applyInput(player.userId, {
+        type: "order_attack_move",
+        unitId: e.id,
+        x: enemyHq.x,
+        z: enemyHq.z,
+      });
+    }
+  }
+  if (army < 4) return;
   const rax = readyBuilding(ents, "human_barracks");
   const gate = readyBuilding(ents, "alien_gate");
   const rally = rax || gate;
@@ -249,8 +571,8 @@ function attackMoveArmy(sim: MatchSim, player: Player, ents: Ent[]): void {
     sim.applyInput(player.userId, {
       type: "set_rally",
       buildingId: rally.id,
-      x: hq.x,
-      z: hq.z,
+      x: enemyHq.x,
+      z: enemyHq.z,
     });
   }
 }
@@ -277,14 +599,19 @@ function supplyPending(ents: Ent[], race: RaceId): boolean {
   return false;
 }
 
-/** 채집하고, 인구·생산 건물을 짓고, 병력을 모아 적 본진으로 보낸다. */
+/** 채집·테크·정찰·견제·교전을 난이도 간격마다 판단한다. */
 export function tickBot(sim: MatchSim): void {
   if (sim.status !== "playing") return;
-  if (sim.tick % THINK_TICKS !== 0) return;
+  const every =
+    typeof sim.botThinkTicks === "number" && sim.botThinkTicks > 0
+      ? sim.botThinkTicks
+      : THINK_TICKS;
+  if (sim.tick % every !== 0) return;
   const player = sim.players[BOT_USER_ID];
   if (!player) return;
   const ents = listSide(sim, player.side);
   sendMiners(sim, player, ents);
+  sendGasMiners(sim, player, ents);
 
   const supply = supplyOf(sim, player);
   const tight = supply.used + 2 > supply.max && supply.max < SUPPLY_CAP;
@@ -303,6 +630,8 @@ export function tickBot(sim: MatchSim): void {
     }
   }
 
+  stepTech(sim, player, ents);
+
   if (workerCount(ents) < WORKER_CAP) {
     const workerType =
       player.race === "monster"
@@ -312,14 +641,9 @@ export function tickBot(sim: MatchSim): void {
           : "human_worker";
     train(sim, player, ents, workerType);
   } else if (prodReady) {
-    const army =
-      player.race === "monster"
-        ? "monster_blade"
-        : player.race === "alien"
-          ? "alien_guardian"
-          : "human_rifleman";
-    train(sim, player, ents, army);
+    train(sim, player, ents, nextArmy(player, ents));
   }
 
-  attackMoveArmy(sim, player, ents);
+  scout(sim, player, ents);
+  controlArmy(sim, player, ents);
 }

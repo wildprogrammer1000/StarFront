@@ -9,6 +9,7 @@ import {
 } from "./net/nakamaClient";
 import { defaultNickname, ensureAccountDisplayName } from "./player/profile";
 import { LOCAL_AI_MATCH_ID, startLocalAiMatch, type LocalAiMatch } from "./game/localAiMatch";
+import type { BotDifficulty } from "@shared/sim/bot";
 import { createRoom, quickJoin } from "./net/roomsApi";
 import { BattleHud, battleQueuePlaceholder } from "./screens/BattleHud";
 import { BootScreen, ErrorScreen } from "./screens/BootScreen";
@@ -240,6 +241,10 @@ export default function App() {
     },
     [matchId, snapshot?.status]
   );
+
+  const chooseBotDifficulty = useCallback((next: BotDifficulty) => {
+    aiMatchRef.current?.setDifficulty(next);
+  }, []);
 
   const chooseBotRace = useCallback(
     (next: RaceId) => {
@@ -702,6 +707,7 @@ export default function App() {
         race={race}
         onRace={chooseRace}
         onBotRace={chooseBotRace}
+        onBotDifficulty={aiUserIdRef.current ? chooseBotDifficulty : undefined}
         countdown={
           snapshot?.status === "countdown"
             ? snapshot.countdown ?? 5

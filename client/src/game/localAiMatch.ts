@@ -1,5 +1,5 @@
 import type { MatchSnapshot, PlayerInput, RaceId } from "@shared/protocol";
-import { BOT_USER_ID } from "@shared/sim/bot";
+import { BOT_USER_ID, thinkTicksFor, type BotDifficulty } from "@shared/sim/bot";
 import { TICK_DT } from "@shared/sim/constants";
 import { createMatchSim } from "@shared/sim/MatchSim";
 
@@ -9,6 +9,7 @@ export type LocalAiMatch = {
   matchId: string;
   userId: string;
   send: (input: PlayerInput) => void;
+  setDifficulty: (id: BotDifficulty) => void;
   stop: () => void;
 };
 
@@ -28,6 +29,7 @@ export function startLocalAiMatch(opts: {
     inviteCode: "",
   });
   sim.addPlayer(opts.userId, "local", "bottom", opts.displayName);
+  sim.botThinkTicks = thinkTicksFor("normal");
   sim.addPlayer(BOT_USER_ID, "", "top", "컴퓨터");
   sim.applyInput(opts.userId, { type: "set_race", race: opts.race });
 
@@ -85,6 +87,9 @@ export function startLocalAiMatch(opts: {
     matchId: LOCAL_AI_MATCH_ID,
     userId: opts.userId,
     send,
+    setDifficulty(id) {
+      sim.botThinkTicks = thinkTicksFor(id);
+    },
     stop() {
       stopped = true;
       cancelAnimationFrame(raf);

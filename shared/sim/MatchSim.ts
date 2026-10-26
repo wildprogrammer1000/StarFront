@@ -183,6 +183,12 @@ export interface MatchSim {
   /** 이번 틱 피격 대응. 처리 뒤 비운다. */
   retaliations?: Retaliation[];
   nextId: number;
+  /** 컴퓨터가 몇 틱마다 판단하는지. 없으면 1.5초. */
+  botThinkTicks?: number;
+  /** 정찰 보낸 일꾼. */
+  botScoutId?: string;
+  /** 1이면 적 본진을 한 번 봤다. */
+  botScoutSeen?: number;
   playerCount: () => number;
   addPlayer: (
     userId: string,
