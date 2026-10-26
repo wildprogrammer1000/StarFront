@@ -149,17 +149,6 @@ function BattleMenu({
           onChange={(sfxVolume) => updateSoundSettings({ sfxVolume })}
         />
         <Switch
-          checked={sound.voiceOn}
-          label="음성"
-          onChange={(next) => updateSoundSettings({ voiceOn: next })}
-        />
-        <VolumeSlider
-          label="음성 볼륨"
-          enabled={sound.voiceOn}
-          volume={sound.voiceVolume}
-          onChange={(voiceVolume) => updateSoundSettings({ voiceVolume })}
-        />
-        <Switch
           checked={sound.bgmOn}
           label="배경음"
           onChange={(next) => updateSoundSettings({ bgmOn: next })}

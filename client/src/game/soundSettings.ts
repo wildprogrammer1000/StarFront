@@ -1,8 +1,6 @@
 export interface SoundSettings {
   sfxOn: boolean;
   sfxVolume: number;
-  voiceOn: boolean;
-  voiceVolume: number;
   bgmOn: boolean;
   bgmVolume: number;
 }
@@ -23,8 +21,6 @@ function readStored(): SoundSettings {
   const base: SoundSettings = {
     sfxOn: true,
     sfxVolume: 1,
-    voiceOn: true,
-    voiceVolume: 1,
     bgmOn: true,
     bgmVolume: 0.6,
   };
@@ -36,17 +32,12 @@ function readStored(): SoundSettings {
       return {
         sfxOn: parsed.sfxOn !== false,
         sfxVolume: clamp01(parsed.sfxVolume ?? 1),
-        voiceOn: parsed.voiceOn !== false,
-        voiceVolume: clamp01(parsed.voiceVolume ?? 1),
         bgmOn: parsed.bgmOn !== false,
         bgmVolume:
           parsed.bgmVolume === undefined ? 0.6 : clamp01(parsed.bgmVolume),
       };
     }
-    if (localStorage.getItem(LEGACY_SFX_KEY) === "0") {
-      base.sfxOn = false;
-      base.voiceOn = false;
-    }
+    if (localStorage.getItem(LEGACY_SFX_KEY) === "0") base.sfxOn = false;
   } catch {
     /* 깨진 저장값은 기본값 */
   }
@@ -59,8 +50,6 @@ function copySettings(): SoundSettings {
   return {
     sfxOn: current.sfxOn,
     sfxVolume: current.sfxVolume,
-    voiceOn: current.voiceOn,
-    voiceVolume: current.voiceVolume,
     bgmOn: current.bgmOn,
     bgmVolume: current.bgmVolume,
   };
@@ -75,11 +64,6 @@ export function sfxGain(): number {
   return current.sfxOn ? current.sfxVolume : 0;
 }
 
-/** 음성 재생 크기. 끄면 0. */
-export function voiceGain(): number {
-  return current.voiceOn ? current.voiceVolume : 0;
-}
-
 /** 배경음 재생 크기. 끄면 0. */
 export function bgmGain(): number {
   return current.bgmOn ? current.bgmVolume : 0;
@@ -90,11 +74,6 @@ export function updateSoundSettings(patch: Partial<SoundSettings>): void {
     sfxOn: patch.sfxOn !== undefined ? patch.sfxOn : current.sfxOn,
     sfxVolume:
       patch.sfxVolume !== undefined ? clamp01(patch.sfxVolume) : current.sfxVolume,
-    voiceOn: patch.voiceOn !== undefined ? patch.voiceOn : current.voiceOn,
-    voiceVolume:
-      patch.voiceVolume !== undefined
-        ? clamp01(patch.voiceVolume)
-        : current.voiceVolume,
     bgmOn: patch.bgmOn !== undefined ? patch.bgmOn : current.bgmOn,
     bgmVolume:
       patch.bgmVolume !== undefined ? clamp01(patch.bgmVolume) : current.bgmVolume,

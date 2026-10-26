@@ -19,7 +19,6 @@ import { playCountdownTick } from "../game/countdownSfx";
 import { previewBattleBgm } from "../game/battleBgm";
 import { getSoundSettings, updateSoundSettings } from "../game/soundSettings";
 import { useSoundSettings } from "../game/useSoundSettings";
-import { previewVoice } from "../game/voiceSystem";
 import { Banner, Button, Switch, TextField } from "../ui/controls";
 import {
   IconCheck,
@@ -386,44 +385,6 @@ export function LobbyScreen({
                     />
                     <span className="settings-volume-num">
                       {Math.round(sound.sfxVolume * 100)}
-                    </span>
-                  </label>
-                  <Switch
-                    checked={sound.voiceOn}
-                    label="음성"
-                    onChange={(next) => {
-                      updateSoundSettings({ voiceOn: next });
-                      if (next && sound.voiceVolume > 0) previewVoice();
-                    }}
-                  />
-                  <label
-                    className={
-                      sound.voiceOn
-                        ? "settings-volume"
-                        : "settings-volume is-off"
-                    }
-                  >
-                    <span className="sr-only">음성 볼륨</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={Math.round(sound.voiceVolume * 100)}
-                      disabled={!sound.voiceOn}
-                      aria-valuetext={`${Math.round(sound.voiceVolume * 100)}퍼센트`}
-                      onChange={(e) =>
-                        updateSoundSettings({
-                          voiceVolume: Number(e.target.value) / 100,
-                        })
-                      }
-                      onPointerUp={() => {
-                        const now = getSoundSettings();
-                        if (now.voiceOn && now.voiceVolume > 0) previewVoice();
-                      }}
-                    />
-                    <span className="settings-volume-num">
-                      {Math.round(sound.voiceVolume * 100)}
                     </span>
                   </label>
                   <Switch
