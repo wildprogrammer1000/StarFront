@@ -1,7 +1,7 @@
 /**
  * 스타1 저그 크립.
- * - 괴물 사령부·번식지는 넓은 반경, 그 외 건물은 좁은 반경.
- * - 시작 부화장은 반경이 이미 채워진 상태.
+ * - 괴물 사령부·배양못은 넓은 반경, 그 외 건물은 좁은 반경.
+ * - 시작 산란소는 반경이 이미 채워진 상태.
  * - 이후 건물은 발자국부터 한 칸씩 퍼지고, 건물이 없으면 바깥부터 걷힌다.
  * - 괴물 건물은 발자국 전체가 크립 위일 때만 건설.
  * - 누구의 크립이든 건설 가능. 지상 괴물 유닛은 크립 위에서 4/3 배속.
@@ -68,7 +68,7 @@ export function footprintOnCreep(
   return true;
 }
 
-/** 지상 괴물만. 대군주 등 공중은 그대로. */
+/** 지상 괴물만. 관측체 등 공중은 그대로. */
 export function speedOnCreep(
   sim: CreepState,
   typeId: string,
@@ -85,7 +85,7 @@ export function speedOnCreep(
   return base * SPEED_MUL;
 }
 
-/** 경기 시작: 부화장 반경을 한 번에 채운다. */
+/** 경기 시작: 산란소 반경을 한 번에 채운다. */
 export function fillStartingCreep(sim: CreepState): void {
   sim.creep = encode(buildAllow(sim));
   sim.creepSpread = 0;

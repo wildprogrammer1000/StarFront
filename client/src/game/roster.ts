@@ -126,7 +126,7 @@ export function supplyCount(
     }
   }
   const base = race === "monster" ? 0 : 10;
-  // 저글링 실개체는 2기 = 인구 1. 알은 unitCost.supply로 이미 잡음.
+  // 칼날충 실개체는 2기 = 인구 1. 알은 unitCost.supply로 이미 잡음.
   used += Math.ceil(blades / 2);
   return { used, max: Math.min(SUPPLY_CAP, base + bonus) };
 }

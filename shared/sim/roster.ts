@@ -1,4 +1,4 @@
-import type { RaceId } from "../protocol/index";
+import type { RaceId } from "@shared/protocol";
 import { BUILDING_COST, UNIT_COST } from "@shared/economy";
 import {
   BUILDING_ROWS,

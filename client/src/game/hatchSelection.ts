@@ -2,7 +2,7 @@ import type { EntitySnap } from "../protocol";
 
 /**
  * 선택 중이던 알이 부화하면 그 유닛으로 선택을 잇는다.
- * 알 id 를 물려받은 첫 유닛은 그대로 두고, 저글링 짝(hatchOf)도 넣는다.
+ * 알 id 를 물려받은 첫 유닛은 그대로 두고, 칼날충 짝(hatchOf)도 넣는다.
  * 죽은 알·유닛은 선택에서 뺀다.
  */
 export function followHatchedSelection(

@@ -33,9 +33,11 @@ export function rpcCreateRoom(
   cleanupStaleRooms(nk, logger);
 
   const req = parsePayload<CreateRoomRequest>(payload);
-  const name =
-    (req.name || "StarFront Room").trim().slice(0, 32) || "StarFront Room";
-  const isPublic = req.isPublic !== false;
+  const vsBot = req.vsBot === true;
+  const name = vsBot
+    ? "AI 대전"
+    : (req.name || "StarFront Room").trim().slice(0, 32) || "StarFront Room";
+  const isPublic = vsBot ? false : req.isPublic !== false;
 
   const inviteCode = generateInviteCode(nk);
   const roomId = inviteCode;
@@ -45,6 +47,7 @@ export function rpcCreateRoom(
     isPublic: isPublic ? "1" : "0",
     name: name,
     hostUserId: ctx.userId,
+    vsBot: vsBot ? "1" : "0",
   });
 
   const room: RoomRecord = {

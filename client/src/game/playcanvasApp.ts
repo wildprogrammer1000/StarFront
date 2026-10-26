@@ -652,7 +652,7 @@ export function createPlayCanvasApp(
     return (Math.atan2(v.x, v.z) * 180) / Math.PI;
   }
 
-  /** 용기병·대군주는 이동·조준과 상관없이 스프라이트 기본 방향을 유지한다. */
+  /** 기동포·관측체는 이동·조준과 상관없이 스프라이트 기본 방향을 유지한다. */
   function locksFacing(typeId: string | undefined): boolean {
     return typeId === "alien_dragoon" || typeId === "monster_sac";
   }
@@ -1121,7 +1121,7 @@ export function createPlayCanvasApp(
     return bodyIsMoving(e);
   }
 
-  /** 용기병 공격은 다리 벌린 정지 스프라이트. 걸어가는 공격이동만 이동 프레임. */
+  /** 기동포 공격은 다리 벌린 정지 스프라이트. 걸어가는 공격이동만 이동 프레임. */
   function dragoonAttackIdle(e: EntitySnap): boolean {
     if (e.typeId !== "alien_dragoon") return false;
     if (e.order === "attack") return true;

@@ -17,9 +17,11 @@ export function BootScreen() {
 export function ErrorScreen({
   message,
   onRetry,
+  onAiMatch,
 }: {
   message: string;
   onRetry: () => void;
+  onAiMatch?: () => void;
 }) {
   return (
     <ScreenFill center>
@@ -28,6 +30,11 @@ export function ErrorScreen({
         <Button variant="primary" block onClick={onRetry}>
           다시 접속
         </Button>
+        {onAiMatch ? (
+          <Button block onClick={onAiMatch}>
+            AI 대전
+          </Button>
+        ) : null}
       </div>
     </ScreenFill>
   );

@@ -16,6 +16,9 @@ const RACE_OPTIONS = RACE_ORDER.map((id) => ({
   label: RACES[id].name,
 }));
 
+/** 로컬 AI 플레이어. shared/sim/bot.ts 와 같다. */
+const BOT_USER_ID = "bot";
+
 export function MatchingScreen({
   phase,
   onCancel,
@@ -47,6 +50,7 @@ export function WaitingScreen({
   localUserId,
   race,
   onRace,
+  onBotRace,
   countdown,
   canStart,
   onStart,
@@ -59,6 +63,7 @@ export function WaitingScreen({
   localUserId?: string;
   race: RaceId;
   onRace: (race: RaceId) => void;
+  onBotRace?: (race: RaceId) => void;
   countdown?: number;
   canStart: boolean;
   onStart: () => void;
@@ -71,6 +76,11 @@ export function WaitingScreen({
       ? countdown > 0
       : false;
   const [copied, setCopied] = useState(false);
+  const [botRacePick, setBotRacePick] = useState<RaceId | null>(null);
+  const botPlayer = players.find((p) => p.userId === BOT_USER_ID);
+  useEffect(() => {
+    if (botRacePick && botPlayer?.race === botRacePick) setBotRacePick(null);
+  }, [botPlayer?.race, botRacePick]);
 
   useEffect(() => {
     preloadCountdownTick();
@@ -154,6 +164,7 @@ export function WaitingScreen({
               const host = p && p.userId === hostUserId;
               const self = p && p.userId === localUserId;
               const profile = p ? RACES[p.race] : null;
+              const bot = p?.userId === BOT_USER_ID;
               return (
                 <div key={i} className="room-slot-row">
                   <div
@@ -186,6 +197,17 @@ export function WaitingScreen({
                         value={race}
                         options={RACE_OPTIONS}
                         onChange={onRace}
+                      />
+                    ) : bot && onBotRace ? (
+                      <MetalSelect
+                        className="race-select-wrap"
+                        label="컴퓨터 종족"
+                        value={botRacePick ?? p.race}
+                        options={RACE_OPTIONS}
+                        onChange={(next) => {
+                          setBotRacePick(next);
+                          onBotRace(next);
+                        }}
                       />
                     ) : (
                       <span className="room-slot-race">{profile?.name}</span>

@@ -20,6 +20,8 @@ export interface RoomRecord {
 export interface CreateRoomRequest {
   name?: string;
   isPublic?: boolean;
+  /** 사람 대신 서버 봇이 상대가 된다. 공개 목록에는 올리지 않는다. */
+  vsBot?: boolean;
 }
 
 export interface CreateRoomResponse {

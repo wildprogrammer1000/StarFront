@@ -11,7 +11,7 @@ export const MINERAL_UNIT = 50;
 
 /**
  * SC 브루드워 미네랄 비용 ÷ 50.
- * 예: 배럭 150 → 3.0, 스포닝풀 200 → 4.0, 저글링(50/2) → 0.5, 질럿 100 → 2.0
+ * 예: 배럭 150 → 3.0, 배양못 200 → 4.0, 칼날충(50/2) → 0.5, 질럿 100 → 2.0
  */
 export const SC_MINERAL_RATIO = {
   worker: 1,
@@ -31,13 +31,13 @@ export const SC_MINERAL_RATIO = {
   supply_depot: 2,
   /** SC Academy 150 */
   academy: 3,
-  /** SC Spawning Pool 200 — 괴물 번식지(monster_hatchery) */
+  /** SC Spawning Pool 200 — 괴물 배양못(monster_hatchery) */
   spawning_pool: 4,
-  /** SC Hatchery 300 — 추가 부화장(monster_hatch) */
+  /** SC Hatchery 300 — 추가 산란소(monster_hatch) */
   hatchery: 6,
   /** SC Command Center 400 — 추가 사령부(human_hq) */
   command_center: 8,
-  /** SC Nexus 400 — 추가 연결체(alien_hq) */
+  /** SC Nexus 400 — 추가 결속소(alien_hq) */
   nexus: 8,
   /** SC Hydralisk Den 100 */
   hydralisk_den: 2,
@@ -220,7 +220,7 @@ export const UNIT_COST: Record<
   monster_blade: {
     costM: mineralOf(SC_MINERAL_RATIO.zergling),
     costE: gasOf(SC_GAS_RATIO.zergling),
-    /** 알 1개(저글링 2기)당 인구 1 */
+    /** 알 1개(칼날충 2기)당 인구 1 */
     supply: 1,
   },
   monster_hydra: {

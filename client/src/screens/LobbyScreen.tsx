@@ -51,6 +51,7 @@ interface Props {
   session: Session;
   onQuickMatch: () => void;
   onCreateRoom: (name: string) => void;
+  onAiMatch: () => void;
   onEnterMatch: (matchId: string, room: RoomRecord) => Promise<void>;
   externalError?: string | null;
 }
@@ -60,6 +61,7 @@ export function LobbyScreen({
   session,
   onQuickMatch,
   onCreateRoom,
+  onAiMatch,
   onEnterMatch,
   externalError,
 }: Props) {
@@ -230,24 +232,34 @@ export function LobbyScreen({
                 )}
               </div>
             </section>
-            <div className="battle-actions">
+            <div className="battle-launch">
+              <div className="battle-actions">
+                <Button
+                  variant="primary"
+                  className="battle-quick"
+                  disabled={busy}
+                  onClick={onQuickMatch}
+                >
+                  빠른 시작
+                </Button>
+                <button
+                  type="button"
+                  className="battle-create"
+                  aria-label="방만들기"
+                  disabled={busy}
+                  onClick={openCreate}
+                >
+                  <IconPlus size={22} />
+                </button>
+              </div>
               <Button
                 variant="primary"
                 className="battle-quick"
                 disabled={busy}
-                onClick={onQuickMatch}
+                onClick={onAiMatch}
               >
-                빠른 시작
+                AI 대전
               </Button>
-              <button
-                type="button"
-                className="battle-create"
-                aria-label="방만들기"
-                disabled={busy}
-                onClick={openCreate}
-              >
-                <IconPlus size={22} />
-              </button>
             </div>
             {error && <Banner>{error}</Banner>}
           </div>

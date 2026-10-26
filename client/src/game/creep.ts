@@ -21,7 +21,7 @@ export function creepHas(packed: string, cx: number, cz: number): boolean {
   return ((n >> (i & 3)) & 1) === 1;
 }
 
-/** 괴물 건물은 발자국 전체가 크립 위일 때만 건설. 추가 부화장은 예외. */
+/** 괴물 건물은 발자국 전체가 크립 위일 때만 건설. 추가 산란소는 예외. */
 export function needsCreep(typeId: string): boolean {
   const def = buildingDef(typeId);
   if (!def || def.race !== "monster") return false;

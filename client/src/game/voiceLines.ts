@@ -57,7 +57,7 @@ export const RACE_VOICES: Record<RaceId, RaceVoice> = {
     advisor: {
       minerals: [line("human/advisor/minerals/1", "미네랄이 부족합니다.")],
       ether: [line("human/advisor/ether/1", "에테르가 부족합니다.")],
-      supply: [line("human/advisor/supply/2", "보급고가 더 필요합니다.")],
+      supply: [line("human/advisor/supply/2", "보급창고가 더 필요합니다.")],
     },
   },
   monster: {
@@ -68,7 +68,7 @@ export const RACE_VOICES: Record<RaceId, RaceVoice> = {
     advisor: {
       minerals: [line("monster/advisor/minerals/1", "미네랄이 없다.")],
       ether: [line("monster/advisor/ether/1", "에테르가 없다.")],
-      supply: [line("monster/advisor/supply/2", "대군주가 더 필요하다.")],
+      supply: [line("monster/advisor/supply/2", "관측체가 더 필요하다.")],
     },
   },
   alien: {
@@ -92,7 +92,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
     rate: 1.16,
     lines: {
       select: [
-        line("human/worker/select/1", "건설로봇, 대기 중입니다."),
+        line("human/worker/select/1", "공병기, 대기 중입니다."),
         line("human/worker/select/2", "작업 준비됐습니다."),
         line("human/worker/select/3", "명령을 기다립니다."),
       ],
@@ -112,7 +112,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
         line("human/worker/annoyed/3", "수신은 끝났습니다."),
       ],
       produce: [
-        line("human/worker/produce/1", "건설로봇, 배치 완료."),
+        line("human/worker/produce/1", "공병기, 배치 완료."),
         line("human/worker/produce/2", "작업에 투입할 수 있습니다."),
         line("human/worker/produce/3", "생산이 끝났습니다."),
       ],
@@ -125,7 +125,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
     rate: 1.2,
     lines: {
       select: [
-        line("human/rifleman/select/1", "해병, 대기."),
+        line("human/rifleman/select/1", "소총병, 대기."),
         line("human/rifleman/select/2", "사격 준비 완료."),
         line("human/rifleman/select/3", "전열에 섭니다."),
       ],
@@ -145,7 +145,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
         line("human/rifleman/annoyed/3", "같은 호출입니다."),
       ],
       produce: [
-        line("human/rifleman/produce/1", "해병, 전열 합류."),
+        line("human/rifleman/produce/1", "소총병, 전열 합류."),
         line("human/rifleman/produce/2", "전투 준비됐습니다."),
         line("human/rifleman/produce/3", "배치 완료."),
       ],
@@ -158,7 +158,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
     rate: 1.08,
     lines: {
       select: [
-        line("human/firebat/select/1", "화염방사병, 준비."),
+        line("human/firebat/select/1", "화염병, 준비."),
         line("human/firebat/select/2", "연료 충전 완료."),
         line("human/firebat/select/3", "가까이 붙을 수 있습니다."),
       ],
@@ -178,7 +178,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
         line("human/firebat/annoyed/3", "버튼을 그만 눌러 주십시오."),
       ],
       produce: [
-        line("human/firebat/produce/1", "화염방사병, 출격 준비."),
+        line("human/firebat/produce/1", "화염병, 출격 준비."),
         line("human/firebat/produce/2", "연료 확인. 대기합니다."),
         line("human/firebat/produce/3", "전열에 합류합니다."),
       ],
@@ -191,7 +191,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
     rate: 1.12,
     lines: {
       select: [
-        line("human/medic/select/1", "의무관입니다."),
+        line("human/medic/select/1", "구급병입니다."),
         line("human/medic/select/2", "치료 준비됐습니다."),
         line("human/medic/select/3", "부상자를 기다립니다."),
       ],
@@ -206,7 +206,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
         line("human/medic/annoyed/3", "키트는 이미 열렸습니다."),
       ],
       produce: [
-        line("human/medic/produce/1", "의무관, 배치됐습니다."),
+        line("human/medic/produce/1", "구급병, 배치됐습니다."),
         line("human/medic/produce/2", "치료 가능합니다."),
         line("human/medic/produce/3", "현장 투입 준비."),
       ],
@@ -366,7 +366,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
         line("alien/worker/annoyed/3", "입력이 반복된다."),
       ],
       produce: [
-        line("alien/worker/produce/1", "탐사정, 소환 완료."),
+        line("alien/worker/produce/1", "탐사기, 소환 완료."),
         line("alien/worker/produce/2", "배치 좌표에 도착했다."),
         line("alien/worker/produce/3", "작업 준비가 끝났다."),
       ],
@@ -380,7 +380,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
     lines: {
       select: [
         line("alien/guardian/select/1", "검이 준비됐다."),
-        line("alien/guardian/select/2", "전사가 대기한다."),
+        line("alien/guardian/select/2", "돌격전사가 대기한다."),
         line("alien/guardian/select/3", "명예를 지킨다."),
       ],
       move: [
@@ -399,7 +399,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
         line("alien/guardian/annoyed/3", "같은 말을 반복하지 마라."),
       ],
       produce: [
-        line("alien/guardian/produce/1", "전사가 소환됐다."),
+        line("alien/guardian/produce/1", "돌격전사, 소환 완료."),
         line("alien/guardian/produce/2", "검이 전열에 섰다."),
         line("alien/guardian/produce/3", "강림이 끝났다."),
       ],
@@ -412,7 +412,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
     rate: 1.04,
     lines: {
       select: [
-        line("alien/dragoon/select/1", "용기병, 기동 대기."),
+        line("alien/dragoon/select/1", "기동포, 기동 대기."),
         line("alien/dragoon/select/2", "포신을 정렬했다."),
         line("alien/dragoon/select/3", "파일럿이 연결됐다."),
       ],
@@ -432,7 +432,7 @@ export const UNIT_VOICES: readonly UnitVoice[] = [
         line("alien/dragoon/annoyed/3", "파일럿은 듣고 있다."),
       ],
       produce: [
-        line("alien/dragoon/produce/1", "용기병, 소환 완료."),
+        line("alien/dragoon/produce/1", "기동포, 소환 완료."),
         line("alien/dragoon/produce/2", "기체가 전개됐다."),
         line("alien/dragoon/produce/3", "파일럿이 탑승했다."),
       ],

@@ -128,7 +128,7 @@ export function footprintPowered(
 }
 
 export function needsPylonPower(typeId: string): boolean {
-  // 융합소는 분출구 위라면 수정주 범위 밖에도 짓는다.
+  // 융합탑은 분출구 위라면 동력탑 범위 밖에도 짓는다.
   return (
     typeId.indexOf("alien_") === 0 &&
     typeId !== "alien_pylon" &&

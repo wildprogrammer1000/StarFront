@@ -1,3 +1,4 @@
+import { BOT_USER_ID } from "../sim/bot";
 import { bindMatchSim, createMatchSim, type MatchSim } from "../sim/MatchSim";
 import type { PlayerInput, Side } from "../protocol/index";
 import { OpCode } from "../protocol/opcodes";
@@ -9,6 +10,7 @@ export interface MatchState {
   joinOrder: string[];
   inviteCode: string;
   roomSyncedPlaying: boolean;
+  vsBot: boolean;
 }
 
 function hydrate(state: unknown): MatchState {
@@ -16,6 +18,7 @@ function hydrate(state: unknown): MatchState {
   if (!s.joinOrder) s.joinOrder = [];
   if (typeof s.inviteCode !== "string") s.inviteCode = "";
   if (typeof s.roomSyncedPlaying !== "boolean") s.roomSyncedPlaying = false;
+  if (typeof s.vsBot !== "boolean") s.vsBot = false;
   s.sim = bindMatchSim(s.sim || {});
   return s;
 }
@@ -95,6 +98,21 @@ function syncRoomPlayers(nk: nkruntime.Nakama, s: MatchState): void {
   updateRoomStatus(nk, s.inviteCode, "waiting", s.joinOrder.length);
 }
 
+function countHumans(s: MatchState): number {
+  let n = 0;
+  for (let i = 0; i < s.joinOrder.length; i++) {
+    if (s.joinOrder[i] !== BOT_USER_ID) n += 1;
+  }
+  return n;
+}
+
+function seatBot(s: MatchState): void {
+  if (!s.vsBot) return;
+  if (s.joinOrder.indexOf(BOT_USER_ID) >= 0) return;
+  s.joinOrder.push(BOT_USER_ID);
+  s.sim.addPlayer(BOT_USER_ID, "", "top", "컴퓨터");
+}
+
 function refreshHost(s: MatchState): void {
   if (s.joinOrder.length > 0) {
     s.sim.setHost(s.joinOrder[0]);
@@ -122,6 +140,7 @@ export function matchInit(
     joinOrder: [],
     inviteCode: inviteCode,
     roomSyncedPlaying: false,
+    vsBot: params.vsBot === "1",
   };
   return {
     state: state,
@@ -182,6 +201,7 @@ export function matchJoin(
     );
     logger.info("join %s side=%s", p.userId, side);
   }
+  seatBot(s);
   reassignSides(s);
   refreshHost(s);
   syncRoomPlayers(nk, s);
@@ -208,7 +228,7 @@ export function matchLeave(
     logger.info("leave %s", p.userId);
   }
 
-  if (s.joinOrder.length === 0) {
+  if (!wasPlaying && countHumans(s) === 0) {
     if (s.inviteCode) {
       deleteRoom(nk, s.inviteCode);
       logger.info("room destroyed (empty) code=%s", s.inviteCode);
@@ -274,6 +294,25 @@ export function matchLoop(
     const input = decodeInput(nk, msg.data);
     if (!input) {
       logger.warn("bad input from %s", userId);
+      continue;
+    }
+
+    if (input.type === "set_bot_race") {
+      refreshHost(s);
+      const hostId = s.joinOrder.length > 0 ? s.joinOrder[0] : s.sim.hostUserId;
+      const bot = s.sim.players[BOT_USER_ID];
+      const race = input.race;
+      const known = race === "human" || race === "monster" || race === "alien";
+      if (
+        s.vsBot &&
+        s.sim.status === "waiting" &&
+        userId === hostId &&
+        bot &&
+        known
+      ) {
+        bot.race = race;
+        logger.info("bot race=%s by %s", race, userId);
+      }
       continue;
     }
 

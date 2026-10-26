@@ -57,7 +57,7 @@ export const SPRITE_URL: Record<string, string> = {
   alien_guardian_move2: "/sprites/alien_guardian_move2.png?v=guard4",
   alien_guardian_attack: "/sprites/alien_guardian_attack.png?v=atk1",
   alien_dragoon: "/sprites/alien_dragoon.png?v=fix3",
-  /** 용기병 위상포. 유닛 중심에서 날아가 맞을 때 피해가 들어간다. */
+  /** 기동포 위상포. 유닛 중심에서 날아가 맞을 때 피해가 들어간다. */
   fx_bolt_alien_dragoon: "/sprites/fx_bolt_alien_dragoon.png?v=bolt1",
   alien_dragoon_move: "/sprites/alien_dragoon_move.png?v=drag4",
   alien_dragoon_move2: "/sprites/alien_dragoon_move2.png?v=drag4",

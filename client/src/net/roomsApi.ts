@@ -52,11 +52,13 @@ export async function createRoom(
   client: Client,
   session: Session,
   name: string,
-  isPublic: boolean
+  isPublic: boolean,
+  vsBot = false
 ): Promise<RoomRecord> {
   const res = await rpcJson<CreateRoomResponse>(client, session, "create_room", {
     name,
-    isPublic,
+    isPublic: vsBot ? false : isPublic,
+    vsBot,
   });
   return res.room;
 }

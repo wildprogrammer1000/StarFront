@@ -8,7 +8,7 @@ export type UnitCmd = "move" | "attack" | "harvest" | "build";
  * 새 유닛은 여기만 추가하면 되고, 없으면 kind 기본값을 쓴다.
  */
 const BY_TYPE: Record<string, readonly UnitCmd[]> = {
-  // 대군주: 보급 공중 — 이동만
+  // 관측체: 보급 공중 — 이동만
   monster_sac: ["move"],
   human_worker: ["move", "attack", "harvest", "build"],
   monster_worker: ["move", "attack", "harvest", "build"],

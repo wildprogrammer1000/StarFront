@@ -7,7 +7,8 @@ import {
   onConnectionChange,
   resetConnection,
 } from "./net/nakamaClient";
-import { ensureAccountDisplayName } from "./player/profile";
+import { defaultNickname, ensureAccountDisplayName } from "./player/profile";
+import { LOCAL_AI_MATCH_ID, startLocalAiMatch, type LocalAiMatch } from "./game/localAiMatch";
 import { createRoom, quickJoin } from "./net/roomsApi";
 import { BattleHud, battleQueuePlaceholder } from "./screens/BattleHud";
 import { BootScreen, ErrorScreen } from "./screens/BootScreen";
@@ -225,6 +226,9 @@ export default function App() {
   const leftEnemyRef = useRef<PlayerSnap | undefined>(undefined);
   const leaveUntilRef = useRef(0);
   const [leaveTick, setLeaveTick] = useState(0);
+  const aiMatchRef = useRef<LocalAiMatch | null>(null);
+  const aiUserIdRef = useRef<string | null>(null);
+  const displayNameRef = useRef("");
 
   const chooseRace = useCallback(
     (next: RaceId) => {
@@ -232,6 +236,15 @@ export default function App() {
       localStorage.setItem(RACE_KEY, next);
       if (matchId && snapshot?.status === "waiting") {
         sendInputToRef.current?.(matchId, { type: "set_race", race: next });
+      }
+    },
+    [matchId, snapshot?.status]
+  );
+
+  const chooseBotRace = useCallback(
+    (next: RaceId) => {
+      if (matchId && snapshot?.status === "waiting") {
+        sendInputToRef.current?.(matchId, { type: "set_bot_race", race: next });
       }
     },
     [matchId, snapshot?.status]
@@ -253,7 +266,7 @@ export default function App() {
         const { session: s, socket: sock } = await ensureConnection(client);
         if (cancelled) return;
         try {
-          await ensureAccountDisplayName(client, s);
+          displayNameRef.current = await ensureAccountDisplayName(client, s);
         } catch {
           // 닉네임 초기화 실패해도 로비 진입은 허용
         }
@@ -280,8 +293,34 @@ export default function App() {
     });
   }, [preview]);
 
+  const acceptSnapshot = useCallback((snap: MatchSnapshot) => {
+    pushSnapshot(snap);
+    const uid = aiUserIdRef.current ?? sessionUserIdRef.current;
+    if (matchIdRef.current && uid) {
+      speakProducedUnits(snap, uid, producedVoiceRef.current);
+    }
+    const now = performance.now();
+    if (
+      shouldMirrorToReact(
+        snapshotRef.current,
+        snap,
+        hudMirrorAtRef.current,
+        now
+      )
+    ) {
+      hudMirrorAtRef.current = now;
+      snapshotRef.current = snap;
+      setSnapshot(snap);
+    }
+  }, []);
+
   const sendInputTo = useCallback(
     (id: string, input: PlayerInput) => {
+      const ai = aiMatchRef.current;
+      if (ai && id === ai.matchId) {
+        ai.send(input);
+        return;
+      }
       if (!socket) return;
       const payload = new TextEncoder().encode(JSON.stringify(input));
       void socket.sendMatchState(id, OpCode.INPUT, payload);
@@ -380,26 +419,7 @@ export default function App() {
             "protocolVersion" in parsed
               ? parsed
               : (parsed as { snapshot: MatchSnapshot }).snapshot;
-          // 월드는 스토어로 즉시 전달(보간). React HUD는 스로틀.
-          pushSnapshot(snap);
-          const mid = matchIdRef.current;
-          const uid = sessionUserIdRef.current;
-          if (mid && uid) {
-            speakProducedUnits(snap, uid, producedVoiceRef.current);
-          }
-          const now = performance.now();
-          if (
-            shouldMirrorToReact(
-              snapshotRef.current,
-              snap,
-              hudMirrorAtRef.current,
-              now
-            )
-          ) {
-            hudMirrorAtRef.current = now;
-            snapshotRef.current = snap;
-            setSnapshot(snap);
-          }
+          acceptSnapshot(snap);
         } catch {
           // ignore malformed payloads
         }
@@ -409,7 +429,7 @@ export default function App() {
     return () => {
       socket.onmatchdata = () => undefined;
     };
-  }, [socket]);
+  }, [socket, acceptSnapshot]);
 
   /** 빠른 시작 = 빈/대기 공개방에 자동 입장 (없으면 생성) */
   const findMatch = useCallback(async () => {
@@ -432,7 +452,12 @@ export default function App() {
   }, []);
 
   const leaveToLobby = useCallback(async () => {
-    if (socket && matchId) {
+    const local = aiMatchRef.current;
+    if (local) {
+      local.stop();
+      aiMatchRef.current = null;
+      aiUserIdRef.current = null;
+    } else if (socket && matchId) {
       try {
         await socket.leaveMatch(matchId);
       } catch {
@@ -447,9 +472,39 @@ export default function App() {
     setSnapshot(null);
     setActiveRoom(null);
     resetBattleUi();
-    setConn("ready");
+    setConn(session ? "ready" : "error");
     stopSpeaking();
-  }, [socket, matchId, resetBattleUi]);
+  }, [socket, matchId, resetBattleUi, session]);
+
+  useEffect(() => {
+    return () => {
+      aiMatchRef.current?.stop();
+    };
+  }, []);
+
+  const startAiMatch = useCallback(() => {
+    aiMatchRef.current?.stop();
+    const userId = session?.user_id || "local";
+    const displayName =
+      displayNameRef.current.trim() || defaultNickname(userId);
+    aiUserIdRef.current = userId;
+    matchIdRef.current = LOCAL_AI_MATCH_ID;
+    producedVoiceRef.current = new Map();
+    resetBattleUi();
+    setError(null);
+    setActiveRoom(null);
+    setPhase("join");
+    const match = startLocalAiMatch({
+      userId,
+      displayName,
+      race: raceRef.current,
+      onSnapshot: acceptSnapshot,
+    });
+    aiMatchRef.current = match;
+    setMatchId(LOCAL_AI_MATCH_ID);
+    setConn("in_match");
+    void preloadBattleAssets();
+  }, [session, acceptSnapshot, resetBattleUi]);
 
   const createAndEnter = useCallback(
     async (name: string) => {
@@ -468,8 +523,9 @@ export default function App() {
     [session, client, enterMatch]
   );
 
+  const selfUserId = aiUserIdRef.current ?? session?.user_id;
   const me =
-    snapshot?.players.find((p) => p.userId === session?.user_id) ?? snapshot?.players[0];
+    snapshot?.players.find((p) => p.userId === selfUserId) ?? snapshot?.players[0];
   const enemy = snapshot?.players.find((p) => p !== me);
   const inLiveMatch =
     conn === "in_match" && !!snapshot && snapshot.status !== "waiting";
@@ -488,12 +544,12 @@ export default function App() {
   const opponentDropped = opponentLeftDuringPlay(
     prevLiveSnapRef.current,
     snapshot,
-    session?.user_id
+    selfUserId
   );
   if (opponentDropped && leaveUntilRef.current === 0) {
     leaveUntilRef.current = Date.now() + OPPONENT_LEFT_RESULT_MS;
     const foe = prevLiveSnapRef.current?.players.find(
-      (p) => p.userId !== session?.user_id
+      (p) => p.userId !== selfUserId
     );
     if (foe) leftEnemyRef.current = foe;
   }
@@ -512,8 +568,8 @@ export default function App() {
     ? orderLobbyPlayers(snapshot.players, hostUserId)
     : [];
   const canStart =
-    !!session?.user_id &&
-    session.user_id === hostUserId &&
+    !!selfUserId &&
+    selfUserId === hostUserId &&
     lobbyPlayers.length >= 2 &&
     snapshot?.status === "waiting";
 
@@ -569,6 +625,7 @@ export default function App() {
           setConn("booting");
           setBootNonce((n) => n + 1);
         }}
+        onAiMatch={startAiMatch}
       />
     );
   } else if (conn === "matching") {
@@ -641,9 +698,10 @@ export default function App() {
         inviteCode={snapshot?.inviteCode || activeRoom?.inviteCode}
         players={lobbyPlayers}
         hostUserId={hostUserId}
-        localUserId={session?.user_id}
+        localUserId={selfUserId}
         race={race}
         onRace={chooseRace}
+        onBotRace={chooseBotRace}
         countdown={
           snapshot?.status === "countdown"
             ? snapshot.countdown ?? 5
@@ -665,6 +723,7 @@ export default function App() {
         onQuickMatch={() => void findMatch()}
         onEnterMatch={joinRoom}
         onCreateRoom={(name) => void createAndEnter(name)}
+        onAiMatch={() => void startAiMatch()}
         externalError={error}
       />
     );

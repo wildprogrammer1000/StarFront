@@ -1324,6 +1324,12 @@ button.sel-multi-cell.is-pick:focus-visible {
   padding: 12px;
 }
 
+.battle-launch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .battle-actions {
   display: flex;
   flex-direction: row;
