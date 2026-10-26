@@ -44,18 +44,13 @@ import {
 const GROUND_Y = 0;
 /** 탑뷰에서 건물·사령부보다 앞에 보이도록 유닛을 더 높게 둔다. */
 const ACTOR_Y = 1.25;
-/** 랠리·이동 점선·마커 — 건물 스프라이트(y≈0.08) 위 */
+/** 랠리 점선·마커 — 건물 스프라이트(y≈0.08) 위 */
 const RALLY_Y = GROUND_Y + 0.42;
-const MOVE_Y = GROUND_Y + 0.38;
 /** 월드 단위당 점선 반복 길이 (대시+간격) */
 const RALLY_DASH_PERIOD = 0.26;
 const RALLY_LINE_WIDTH = 0.045;
 const RALLY_SCROLL_SPEED = 1.35;
-const MOVE_DASH_PERIOD = 0.24;
-const MOVE_LINE_WIDTH = 0.035;
-const MOVE_SCROLL_SPEED = 1.6;
 const RALLY_MARKER_SIZE = 0.4;
-const MOVE_MARKER_SIZE = 0.4;
 const MARKER_PULSE_SPEED = 3.2;
 const MARKER_SPIN_DEG = 28;
 
@@ -1221,7 +1216,6 @@ export function createPlayCanvasApp(
       }
     });
     if (selectedIds.length) updateSelectionVisual();
-    else updateMovePathVisuals();
     tickWalkAnims(now);
     tickDieBursts(now);
     tickHitFlashes(now);
@@ -1232,14 +1226,6 @@ export function createPlayCanvasApp(
     if (rallyRoot.enabled && rallyLineMat) {
       rallyScroll = (rallyScroll + step * RALLY_SCROLL_SPEED) % 1;
       scrollDashMat(rallyLineMat, rallyScroll);
-    }
-    if (movePathActive) {
-      moveScroll = (moveScroll + step * MOVE_SCROLL_SPEED) % 1;
-      for (let i = 0; i < movePaths.length; i++) {
-        if (movePaths[i].root.enabled) {
-          scrollDashMat(movePaths[i].mat, moveScroll);
-        }
-      }
     }
   };
   app.on("update", onUpdate);
@@ -1335,114 +1321,12 @@ export function createPlayCanvasApp(
   rallyRoot.enabled = false;
   app.root.addChild(rallyRoot);
 
-  /** 선택 유닛 이동·공격이동 목적지 점선 (도착 시 스냅샷에서 order 제거) */
-  type MovePathVis = {
-    root: pc.Entity;
-    line: pc.Entity;
-    mat: pc.StandardMaterial;
-    marker: TargetMarker;
-    tiles: number;
-  };
-  const movePaths: MovePathVis[] = [];
-  let moveScroll = 0;
-  let movePathActive = false;
-
-  function ensureMovePaths(count: number): void {
-    while (movePaths.length < count) {
-      const idx = movePaths.length;
-      const root = new pc.Entity(`move-path-${idx}`);
-      const { entity: line, material: mat } = createDashLine(
-        app,
-        `move-line-${idx}`,
-        "rgba(125, 255, 74, 1)"
-      );
-      const marker = createTargetMarker(
-        app,
-        `move-dot-${idx}`,
-        "move_dot",
-        MOVE_MARKER_SIZE,
-        {
-          trackImage: (img) => pendingSpriteImgs.push(img),
-          alive: () => !destroyed && !!app.graphicsDevice,
-        }
-      );
-      root.addChild(line);
-      root.addChild(marker.root);
-      root.enabled = false;
-      app.root.addChild(root);
-      movePaths.push({ root, line, mat, marker, tiles: -1 });
-    }
-  }
-
   function tickMarkerAnims(dt: number): void {
     markerAnimT += dt;
+    if (!rallyRoot.enabled) return;
     const pulse = 1 + Math.sin(markerAnimT * MARKER_PULSE_SPEED) * 0.07;
     const spin = (markerAnimT * MARKER_SPIN_DEG) % 360;
-    const counter = -spin * 0.65;
-    if (rallyRoot.enabled) {
-      animateTargetMarker(rallyMarker, pulse, spin, counter);
-    }
-    if (movePathActive) {
-      for (let i = 0; i < movePaths.length; i++) {
-        if (movePaths[i].root.enabled) {
-          animateTargetMarker(movePaths[i].marker, pulse, spin, counter);
-        }
-      }
-    }
-  }
-
-  function updateMovePathVisuals(): void {
-    type Seg = { fx: number; fz: number; tx: number; tz: number };
-    const segs: Seg[] = [];
-    const idSet = new Set(selectedIds);
-    for (let i = 0; i < lastEntities.length; i++) {
-      const e = lastEntities[i];
-      if (!idSet.has(e.id)) continue;
-      if (localSide != null && e.side !== localSide) continue;
-      if (typeof e.orderX !== "number" || typeof e.orderZ !== "number") continue;
-      if (e.kind !== "unit" && e.kind !== "worker") continue;
-      const live = entityMap.get(e.id);
-      const from = live
-        ? { x: live.getPosition().x, z: live.getPosition().z }
-        : toView(e.x, e.z);
-      const to = toView(e.orderX, e.orderZ);
-      segs.push({ fx: from.x, fz: from.z, tx: to.x, tz: to.z });
-    }
-    ensureMovePaths(segs.length);
-    movePathActive = segs.length > 0;
-    for (let i = 0; i < movePaths.length; i++) {
-      const vis = movePaths[i];
-      const seg = segs[i];
-      if (!seg) {
-        vis.root.enabled = false;
-        continue;
-      }
-      const dx = seg.tx - seg.fx;
-      const dz = seg.tz - seg.fz;
-      const len = Math.hypot(dx, dz);
-      const y = MOVE_Y;
-      vis.marker.root.setPosition(seg.tx, y, seg.tz);
-      if (len < 0.2) {
-        vis.line.enabled = false;
-      } else {
-        vis.line.enabled = true;
-        const angle = (Math.atan2(dx, dz) * 180) / Math.PI;
-        vis.line.setPosition((seg.fx + seg.tx) * 0.5, y, (seg.fz + seg.tz) * 0.5);
-        vis.line.setLocalEulerAngles(0, angle, 0);
-        vis.line.setLocalScale(MOVE_LINE_WIDTH, 1, len);
-        const tiles = Math.max(1, len / MOVE_DASH_PERIOD);
-        if (Math.abs(vis.tiles - tiles) > 0.01) {
-          vis.tiles = tiles;
-          const tiling = new pc.Vec2(1, tiles);
-          vis.mat.diffuseMapTiling = tiling;
-          vis.mat.emissiveMapTiling = tiling;
-          vis.mat.opacityMapTiling = tiling;
-          vis.mat.update();
-        }
-      }
-      vis.root.enabled = true;
-      if (overlayReorder || !vis.root.parent) app.root.addChild(vis.root);
-    }
+    animateTargetMarker(rallyMarker, pulse, spin, -spin * 0.65);
   }
 
   function toView(x: number, z: number): { x: number; z: number } {
@@ -1547,14 +1431,12 @@ export function createPlayCanvasApp(
     const primary = targets[0] ?? null;
     if (!primary) {
       updateRallyVisual(null);
-      updateMovePathVisuals();
       return;
     }
     const neutral = primary.kind === "mineral" || primary.kind === "gas";
     const mine =
       localSide == null ? primary.side === "bottom" : primary.side === localSide;
     updateRallyVisual(mine && !neutral ? primary : null);
-    updateMovePathVisuals();
   }
 
   function updateRallyVisual(target: EntitySnap | null): void {

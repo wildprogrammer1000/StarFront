@@ -68,8 +68,6 @@ export const SPRITE_URL: Record<string, string> = {
   ether_vent: "/sprites/ether_vent.png",
   /** 랠리포인트 마커 */
   rally_dot: "/sprites/rally_dot.png?v=reticle7",
-  /** 이동·공격 목적지 마커 */
-  move_dot: "/sprites/move_dot.png?v=reticle7",
   /** 선택 브래킷. 검정은 알파, 색은 HP 틴트 */
   select_bracket: "/sprites/select_bracket.png?v=bracket1",
   /** 인간 유닛 파괴 2프레임 */
