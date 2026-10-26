@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  armCountdownTicks,
   playCountdownTick,
   preloadCountdownTick,
   stopCountdownTick,
@@ -93,14 +94,15 @@ export function WaitingScreen({
   }, [botPlayer?.race, botRacePick]);
 
   useEffect(() => {
+    armCountdownTicks();
     preloadCountdownTick();
     preloadBattleBgm();
+    return () => stopCountdownTick();
   }, []);
 
   useEffect(() => {
     if (!counting || typeof countdown !== "number") return;
-    playCountdownTick();
-    return () => stopCountdownTick();
+    playCountdownTick(countdown);
   }, [counting, countdown]);
 
   const copyInvite = useCallback(async () => {
