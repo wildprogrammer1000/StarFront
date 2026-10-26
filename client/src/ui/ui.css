@@ -687,7 +687,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   position: absolute;
   left: 12px;
   right: 12px;
-  top: calc(max(12px, env(safe-area-inset-top)) + 36px);
+  top: calc(env(safe-area-inset-top, 0px) + 36px);
   z-index: 3;
   margin: 0;
   padding: 8px 10px;
@@ -1217,10 +1217,15 @@ button.sel-multi-cell.is-pick:focus-visible {
   inset: 0;
   z-index: 2;
   pointer-events: none;
+  padding: 0;
+}
+
+/* 로비 탭이 아닌 화면은 예전 HUD 여백을 내용에만 둔다. */
+.hud:not(.hud-game) .screen-fill:not(:has(.lobby-nav)) {
   padding:
-    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-top, 0px))
     12px
-    max(14px, env(safe-area-inset-bottom));
+    max(14px, env(safe-area-inset-bottom, 0px));
 }
 
 .screen-fill {
@@ -1297,9 +1302,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   overflow: auto;
-  padding-bottom: 4px;
 }
 
 .lobby-dock {
@@ -1315,6 +1318,10 @@ button.sel-multi-cell.is-pick:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding:
+    max(12px, env(safe-area-inset-top, 0px))
+    12px
+    12px;
 }
 
 .battle-actions {
