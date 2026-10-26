@@ -128,7 +128,12 @@ export function footprintPowered(
 }
 
 export function needsPylonPower(typeId: string): boolean {
-  return typeId.indexOf("alien_") === 0 && typeId !== "alien_pylon";
+  // 융합소는 분출구 위라면 수정주 범위 밖에도 짓는다.
+  return (
+    typeId.indexOf("alien_") === 0 &&
+    typeId !== "alien_pylon" &&
+    typeId !== "alien_assimilator"
+  );
 }
 
 /** 아군 수정주마다 파워 영역(월드 AABB 중심·크기). */

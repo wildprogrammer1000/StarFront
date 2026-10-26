@@ -45,7 +45,8 @@ export interface EntitySnap {
     | "mineral"
     | "gas"
     | "larva"
-    | "egg";
+    | "egg"
+    | "bolt";
   side: Side;
   typeId: string;
   x: number;
@@ -94,6 +95,8 @@ export interface EntitySnap {
   harvesting?: boolean;
   /** 건설 이동·건설 중 */
   building?: boolean;
+  /** 투사체를 쏜 유닛. 발사 순간 공격 자세에 쓴다. */
+  attackerId?: string;
 }
 
 export interface PlayerSnap {

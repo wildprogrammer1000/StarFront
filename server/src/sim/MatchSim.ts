@@ -110,6 +110,11 @@ interface SimEntity {
   orderX?: number;
   orderZ?: number;
   orderTargetId?: string;
+  /** 이 명령을 받은 틱. 같은 클릭의 모임 자리만 피한다. */
+  orderTick?: number;
+  /** 이번 공격에서 잡으려는 자리. 같은 목표의 다른 유닛이 피한다. */
+  approachX?: number;
+  approachZ?: number;
   attackCd?: number;
   /** 유충이 속한 부화장 */
   homeId?: string;
@@ -142,6 +147,15 @@ interface SimEntity {
   ejectZ?: number;
 }
 
+/** 피격 한 번. 맞은 유닛과 그 주변 아군이 가해자를 친다. */
+interface Retaliation {
+  victimId: string;
+  attackerId: string;
+  x: number;
+  z: number;
+  side: Side;
+}
+
 export interface MatchSim {
   tick: number;
   status: MatchStatus;
@@ -158,6 +172,10 @@ export interface MatchSim {
   creepRecede: number;
   /** 이번 틱 피격. 스냅샷에 실어 보낸 뒤 비운다. */
   hits?: HitSnap[];
+  /** 날아가는 투사체. 배열은 통째로 다시 넣는다. */
+  bolts?: SimBolt[];
+  /** 이번 틱 피격 대응. 처리 뒤 비운다. */
+  retaliations?: Retaliation[];
   nextId: number;
   playerCount: () => number;
   addPlayer: (
@@ -351,6 +369,7 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
     if (sim.status !== "playing") return;
     sim.tick += 1;
     delete sim.hits;
+    delete sim.retaliations;
 
     tickConstruction(sim);
     refreshOccupancy(sim);
@@ -455,6 +474,24 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
         aimZ: aim ? aim.z : undefined,
       });
     });
+    const bolts = sim.bolts;
+    if (bolts) {
+      const bn = bolts.length;
+      for (let i = 0; i < bn; i++) {
+        const b = bolts[i];
+        entities.push({
+          id: b.id,
+          kind: "bolt",
+          side: b.side,
+          typeId: b.typeId,
+          x: b.x,
+          z: b.z,
+          hp: 1,
+          maxHp: 1,
+          attackerId: b.attackerId,
+        });
+      }
+    }
 
     const snap: MatchSnapshot = {
       protocolVersion: PROTOCOL_VERSION,
@@ -733,7 +770,12 @@ function cellBlocked(
 }
 
 function needsPylonPower(def: { race: string; typeId: string }): boolean {
-  return def.race === "alien" && def.typeId !== "alien_pylon";
+  // 융합소는 분출구 위라면 수정주 범위 밖에도 짓는다.
+  return (
+    def.race === "alien" &&
+    def.typeId !== "alien_pylon" &&
+    def.typeId !== "alien_assimilator"
+  );
 }
 
 function cellPowered(sim: MatchSim, side: Side, cx: number, cz: number): boolean {
@@ -1013,6 +1055,9 @@ function clearOrder(e: SimEntity): void {
   delete e.orderX;
   delete e.orderZ;
   delete e.orderTargetId;
+  delete e.orderTick;
+  delete e.approachX;
+  delete e.approachZ;
   delete e.attackCd;
   clearNav(e);
 }
@@ -1069,6 +1114,9 @@ function replaceEntity(sim: MatchSim, e: SimEntity): SimEntity {
   if (isFiniteNum(e.orderX)) next.orderX = e.orderX;
   if (isFiniteNum(e.orderZ)) next.orderZ = e.orderZ;
   if (e.orderTargetId) next.orderTargetId = e.orderTargetId;
+  if (typeof e.orderTick === "number") next.orderTick = e.orderTick;
+  if (isFiniteNum(e.approachX)) next.approachX = e.approachX;
+  if (isFiniteNum(e.approachZ)) next.approachZ = e.approachZ;
   if (typeof e.attackCd === "number") next.attackCd = e.attackCd;
   if (e.homeId) next.homeId = e.homeId;
   if (e.kind === "larva") {
@@ -1141,6 +1189,33 @@ const MARINE_RANGE = 2.4;
 const MARINE_PERIOD = 0.75;
 /** 화염방사병 스플래시 반경(월드). 주 목표 제외 지상 적에게 절반 피해. */
 const FIREBAT_SPLASH = MARINE_RANGE * 0.35;
+/**
+ * 피격 대응이 퍼지는 거리(월드).
+ * 맞은 자리 이 반경 안의 대기 중인 아군이 같은 적을 공격한다.
+ * 해병 사거리(2.4)보다 조금 넓어, 붙어 있는 분대는 함께 움직인다.
+ */
+const RETALIATE_RADIUS = 3;
+/** 용기병 위상포. 중심에서 나가 대상 중심에 닿을 때 피해가 들어간다. */
+const DRAGOON_BOLT_SPEED = 7;
+const DRAGOON_BOLT_TYPE = "fx_bolt_alien_dragoon";
+
+interface SimBolt {
+  id: string;
+  side: Side;
+  typeId: string;
+  x: number;
+  z: number;
+  tx: number;
+  tz: number;
+  targetId: string;
+  damage: number;
+  attackerId: string;
+  attackerTypeId: string;
+  /** 이 틱에 발사됨. 같은 틱에는 중심에서 움직이지 않는다. */
+  born: number;
+  /** 1이면 이번 스냅샷에 착탄 위치를 보여 주고 다음 틱에 지운다. */
+  impact: number;
+}
 
 function combatProfile(typeId: string): {
   speed: number;
@@ -1371,6 +1446,116 @@ function finishPendingBuild(sim: MatchSim, worker: SimEntity): void {
   refreshOccupancy(sim);
 }
 
+/** 한 클릭으로 모일 때 몸통이 겹치지 않는 최소 간격. */
+const GATHER_GAP2 = 0.46 * 0.46;
+
+function gatherReserved(
+  sim: MatchSim,
+  ent: SimEntity,
+  tx: number,
+  tz: number,
+  xs: number[],
+  zs: number[]
+): void {
+  eachEntity(sim.entities, function (e) {
+    if (e.id === ent.id || e.side !== ent.side) return;
+    if (e.orderTick !== sim.tick) return;
+    if (e.order !== "move" && e.order !== "attack_move") return;
+    if (!isFiniteNum(e.orderX) || !isFiniteNum(e.orderZ)) return;
+    if (dist2(e.orderX, e.orderZ, tx, tz) > 4) return;
+    xs.push(e.orderX);
+    zs.push(e.orderZ);
+  });
+}
+
+function gatherTooClose(x: number, z: number, xs: number[], zs: number[]): boolean {
+  for (let i = 0; i < xs.length; i++) {
+    if (dist2(x, z, xs[i], zs[i]) < GATHER_GAP2) return true;
+  }
+  return false;
+}
+
+/** 칸 안에서 목표에 가장 가까운 점. 경계는 이웃 칸으로 넘어가지 않게 당긴다. */
+function closestInCell(
+  cx: number,
+  cz: number,
+  tx: number,
+  tz: number
+): { x: number; z: number } {
+  const c = cellCenter(cx, cz);
+  const h = MAP.cellSize * 0.5 - 0.02;
+  let x = tx;
+  let z = tz;
+  if (x < c.x - h) x = c.x - h;
+  else if (x > c.x + h) x = c.x + h;
+  if (z < c.z - h) z = c.z - h;
+  else if (z > c.z + h) z = c.z + h;
+  return { x: x, z: z };
+}
+
+function searchGather(
+  sim: MatchSim,
+  ent: SimEntity,
+  tx: number,
+  tz: number,
+  rx: number[],
+  rz: number[],
+  maxR: number
+): { x: number; z: number } | null {
+  let bestX = 0;
+  let bestZ = 0;
+  let bestD = 1e18;
+  let found = false;
+  function consider(x: number, z: number): void {
+    if (gatherTooClose(x, z, rx, rz)) return;
+    if (!canStand(sim, ent, x, z)) return;
+    const d = dist2(x, z, tx, tz);
+    if (!found || d < bestD) {
+      found = true;
+      bestD = d;
+      bestX = x;
+      bestZ = z;
+    }
+  }
+  const clamped = clampMap(tx, tz, mapPad(ent));
+  consider(clamped.x, clamped.z);
+  const g = worldToCell(tx, tz);
+  const w = MAP.width;
+  const depth = MAP.depth;
+  for (let r = 0; r <= maxR; r++) {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (r > 0 && Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+        const cx = g.cx + dx;
+        const cz = g.cz + dz;
+        if (cx < 0 || cz < 0 || cx >= w || cz >= depth) continue;
+        const p = closestInCell(cx, cz, tx, tz);
+        consider(p.x, p.z);
+      }
+    }
+  }
+  if (!found) return null;
+  return { x: bestX, z: bestZ };
+}
+
+/** 클릭 지점에 설 수 있으면 그곳, 아니면 가장 가까운 빈 자리. 같은 명령의 아군과는 겹치지 않는다. */
+function gatherPoint(
+  sim: MatchSim,
+  ent: SimEntity,
+  tx: number,
+  tz: number
+): { x: number; z: number } {
+  refreshOccupancy(sim);
+  const rx: number[] = [];
+  const rz: number[] = [];
+  gatherReserved(sim, ent, tx, tz, rx, rz);
+  const near = searchGather(sim, ent, tx, tz, rx, rz, 16);
+  if (near) return near;
+  const any = searchGather(sim, ent, tx, tz, [], [], 18);
+  if (any) return any;
+  return clampMap(tx, tz, mapPad(ent));
+}
+
 function orderMove(
   sim: MatchSim,
   player: SimPlayer,
@@ -1383,9 +1568,10 @@ function orderMove(
   abandonBuild(unit);
   clearHarvest(sim, unit);
   unit.order = "move";
-  const dest = clampMap(x, z, mapPad(unit));
+  const dest = gatherPoint(sim, unit, x, z);
   unit.orderX = dest.x;
   unit.orderZ = dest.z;
+  unit.orderTick = sim.tick;
   delete unit.orderTargetId;
   delete unit.attackCd;
   clearNav(unit);
@@ -1451,9 +1637,10 @@ function orderAttackMove(
   abandonBuild(unit);
   clearHarvest(sim, unit);
   unit.order = "attack_move";
-  const dest = clampMap(x, z, mapPad(unit));
+  const dest = gatherPoint(sim, unit, x, z);
   unit.orderX = dest.x;
   unit.orderZ = dest.z;
+  unit.orderTick = sim.tick;
   delete unit.orderTargetId;
   unit.attackCd = 0;
   clearNav(unit);
@@ -1538,6 +1725,164 @@ function noteHit(
   }
   next.push(hit);
   sim.hits = next;
+  queueRetaliation(sim, target, attackerId);
+}
+
+function queueRetaliation(
+  sim: MatchSim,
+  victim: SimEntity,
+  attackerId: string
+): void {
+  if (victim.kind !== "unit" && victim.kind !== "worker") return;
+  const attacker = sim.entities[attackerId];
+  if (!attacker || attacker.hp <= 0 || attacker.side === victim.side) return;
+  const prev = sim.retaliations;
+  const next: Retaliation[] = [];
+  if (prev) {
+    const n = prev.length;
+    for (let i = 0; i < n; i++) next.push(prev[i]);
+  }
+  next.push({
+    victimId: victim.id,
+    attackerId: attackerId,
+    x: victim.x,
+    z: victim.z,
+    side: victim.side,
+  });
+  sim.retaliations = next;
+}
+
+/** 맞은 유닛은 이동을 끊고 반격한다. 주변 아군은 명령이 없을 때만 함께 붙는다. */
+function tryRetaliate(
+  sim: MatchSim,
+  unit: SimEntity,
+  attacker: SimEntity,
+  victimSelf: boolean
+): void {
+  if (!canCommandUnit(unit) || unit.hp <= 0) return;
+  if (unit.harvestPhase || unit.morphBuild || unit.busyOn) return;
+  if (isConstructBusy(sim, unit)) return;
+  if (combatProfile(unit.typeId).damage <= 0) return;
+  if (!isAttackableTarget(unit, attacker)) return;
+  if (unit.orderTargetId === attacker.id && unit.order) return;
+  if (unit.order === "attack" && unit.orderTargetId) {
+    const cur = sim.entities[unit.orderTargetId];
+    if (cur && cur.hp > 0) return;
+  }
+  if (!victimSelf && unit.order) return;
+  unit.order = "attack";
+  unit.orderTargetId = attacker.id;
+  delete unit.orderX;
+  delete unit.orderZ;
+  clearNav(unit);
+  replaceEntity(sim, unit);
+}
+
+function applyRetaliations(sim: MatchSim): void {
+  const src = sim.retaliations;
+  delete sim.retaliations;
+  if (!src || src.length === 0) return;
+  const r2 = RETALIATE_RADIUS * RETALIATE_RADIUS;
+  const n = src.length;
+  for (let i = 0; i < n; i++) {
+    const ev = src[i];
+    const attacker = sim.entities[ev.attackerId];
+    if (!attacker || attacker.hp <= 0 || attacker.side === ev.side) continue;
+    const victim = sim.entities[ev.victimId];
+    if (victim && victim.hp > 0) tryRetaliate(sim, victim, attacker, true);
+    eachEntity(sim.entities, function (ally) {
+      if (ally.side !== ev.side || ally.hp <= 0) return;
+      if (ally.id === ev.victimId) return;
+      if (dist2(ally.x, ally.z, ev.x, ev.z) > r2) return;
+      tryRetaliate(sim, ally, attacker, false);
+    });
+  }
+}
+
+function pushBolt(sim: MatchSim, bolt: SimBolt): void {
+  const prev = sim.bolts;
+  const next: SimBolt[] = [];
+  if (prev) {
+    const n = prev.length;
+    for (let i = 0; i < n; i++) next.push(prev[i]);
+  }
+  next.push(bolt);
+  sim.bolts = next;
+}
+
+function boltCanHit(bolt: SimBolt, target: SimEntity): boolean {
+  // 클릭으로 쏜 위상포는 아군 유닛·건물에도 맞는다.
+  if (target.hp <= 0 || target.id === bolt.attackerId) return false;
+  if (!isAttackTargetKind(target)) return false;
+  if (isAirUnit(target.typeId) && !attacksAir(bolt.attackerTypeId)) return false;
+  return true;
+}
+
+/** 용기병 위상포를 유닛 중심에 만든다. 피해는 착탄 틱에 넣는다. */
+function launchDragoonBolt(
+  sim: MatchSim,
+  attacker: SimEntity,
+  target: SimEntity,
+  damage: number
+): void {
+  const bolt: SimBolt = {
+    id: "p" + sim.nextId++,
+    side: attacker.side,
+    typeId: DRAGOON_BOLT_TYPE,
+    x: attacker.x,
+    z: attacker.z,
+    tx: target.x,
+    tz: target.z,
+    targetId: target.id,
+    damage: damage,
+    attackerId: attacker.id,
+    attackerTypeId: attacker.typeId,
+    born: sim.tick,
+    impact: 0,
+  };
+  pushBolt(sim, bolt);
+}
+
+function tickDragoonBolts(sim: MatchSim, dead: string[]): void {
+  const src = sim.bolts;
+  if (!src || src.length === 0) return;
+  const next: SimBolt[] = [];
+  const step = DRAGOON_BOLT_SPEED * TICK_DT;
+  const step2 = step * step;
+  const n = src.length;
+  for (let i = 0; i < n; i++) {
+    const b = src[i];
+    if (b.impact) continue;
+    if (b.born === sim.tick) {
+      next.push(b);
+      continue;
+    }
+    const target = sim.entities[b.targetId];
+    if (target && boltCanHit(b, target)) {
+      b.tx = target.x;
+      b.tz = target.z;
+    }
+    const dx = b.tx - b.x;
+    const dz = b.tz - b.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 <= step2) {
+      b.x = b.tx;
+      b.z = b.tz;
+      b.impact = 1;
+      if (target && boltCanHit(b, target)) {
+        target.hp -= b.damage;
+        noteHit(sim, target, b.attackerId, b.attackerTypeId, b.damage);
+        if (target.hp <= 0) dead.push(target.id);
+        else replaceEntity(sim, target);
+      }
+    } else {
+      const dist = Math.sqrt(d2);
+      b.x += (dx / dist) * step;
+      b.z += (dz / dist) * step;
+    }
+    next.push(b);
+  }
+  sim.bolts = next;
 }
 
 function strikeTarget(
@@ -1549,6 +1894,11 @@ function strikeTarget(
 ): void {
   e.attackCd = (e.attackCd || 0) - TICK_DT;
   if ((e.attackCd || 0) > 0) return;
+  if (e.typeId === "alien_dragoon") {
+    e.attackCd = profile.period;
+    launchDragoonBolt(sim, e, target, profile.damage);
+    return;
+  }
   target.hp -= profile.damage;
   e.attackCd = profile.period;
   noteHit(sim, target, e.id, e.typeId, profile.damage);
@@ -2653,9 +3003,53 @@ function targetInWeaponRange(
 /** 도착 판정 오차. 이 안에 서면 무기 사거리 안이어야 한다. */
 const APPROACH_STOP = 0.05;
 
+function attackSlotTaken(
+  xs: number[],
+  zs: number[],
+  x: number,
+  z: number
+): boolean {
+  for (let i = 0; i < xs.length; i++) {
+    if (dist2(xs[i], zs[i], x, z) < GATHER_GAP2) return true;
+  }
+  return false;
+}
+
+/** 같은 대상을 노리는 아군이 이미 잡은 자리. */
+function collectAttackSlots(
+  sim: MatchSim,
+  ent: SimEntity,
+  target: SimEntity,
+  xs: number[],
+  zs: number[]
+): void {
+  eachEntity(sim.entities, function (e) {
+    if (e.id === ent.id || e.hp <= 0 || e.side !== ent.side) return;
+    if (e.orderTargetId !== target.id) return;
+    if (e.order !== "attack" && e.order !== "attack_move") return;
+    if (isFiniteNum(e.approachX) && isFiniteNum(e.approachZ)) {
+      if (dist2(e.approachX, e.approachZ, target.x, target.z) < 9) {
+        xs.push(e.approachX);
+        zs.push(e.approachZ);
+      }
+      return;
+    }
+    if (dist2(e.x, e.z, target.x, target.z) < 2.25) {
+      xs.push(e.x);
+      zs.push(e.z);
+    }
+  });
+}
+
+function holdApproach(e: SimEntity): void {
+  e.approachX = e.x;
+  e.approachZ = e.z;
+}
+
 /**
  * 공격이 나가는 지점. 목표 중심이 아니라, 설 수 있고 사거리 안인 자리.
  * 건물·HQ는 발자국 가장자리에서, 유닛은 중심에서 잰다.
+ * 같은 대상을 치는 아군이 있으면 그 다음으로 가까운 빈 자리를 고른다.
  */
 function attackApproach(
   sim: MatchSim,
@@ -2693,6 +3087,10 @@ function attackApproach(
     oz = target.z + dz * t;
   }
 
+  const slotX: number[] = [];
+  const slotZ: number[] = [];
+  collectAttackSlots(sim, ent, target, slotX, slotZ);
+
   const angles = [0, 0.55, -0.55, 1.15, -1.15, 1.8, -1.8, 2.5, -2.5, 3.1416];
   let bestX = ox + ux * gap;
   let bestZ = oz + uz * gap;
@@ -2714,7 +3112,8 @@ function attackApproach(
         ? distToFootprint(x, z, target) <= reach - 0.01
         : dist2(x, z, target.x, target.z) <= (reach - 0.01) * (reach - 0.01);
       if (!inside) continue;
-      const score = dist2(ent.x, ent.z, x, z) + ai * 0.25;
+      const taken = attackSlotTaken(slotX, slotZ, x, z) ? 1000 : 0;
+      const score = taken + dist2(ent.x, ent.z, x, z) + ai * 0.25;
       if (score < bestScore) {
         found = true;
         bestScore = score;
@@ -2728,6 +3127,8 @@ function attackApproach(
     bestX = ox + ux * gap;
     bestZ = oz + uz * gap;
   }
+  ent.approachX = bestX;
+  ent.approachZ = bestZ;
   return { x: bestX, z: bestZ, stop: APPROACH_STOP };
 }
 
@@ -2764,7 +3165,8 @@ function tickUnitOrders(sim: MatchSim): void {
       }
       const ox = e.orderX;
       const oz = e.orderZ;
-      const arrived = moveEntityToward(sim, e, ox, oz, profile.speed, 0.28);
+      const stop = e.morphBuild ? 0.28 : 0.08;
+      const arrived = moveEntityToward(sim, e, ox, oz, profile.speed, stop);
       if (arrived && e.morphBuild) {
         finishPendingBuild(sim, e);
         return;
@@ -2796,6 +3198,7 @@ function tickUnitOrders(sim: MatchSim): void {
         replaceEntity(sim, e);
         return;
       }
+      holdApproach(e);
       clearNav(e);
       strikeTarget(sim, e, target, profile, dead);
       if (!sim.entities[target.id] || target.hp <= 0) {
@@ -2829,7 +3232,7 @@ function tickUnitOrders(sim: MatchSim): void {
         target = findEngageTarget(sim, e, profile.range);
         if (target) e.orderTargetId = target.id;
       }
-      // 잠근 타겟이 사거리 밖이면 공격 자리까지 붙는다. 사거리 안이면 치면서 좌표로 간다.
+      // 잠근 타겟이 사거리 밖이면 공격 자리까지 붙는다.
       if (target && !targetInWeaponRange(e, target, profile.range)) {
         const goal = attackApproach(sim, e, target, profile.range);
         moveEntityToward(sim, e, goal.x, goal.z, profile.speed, goal.stop);
@@ -2841,8 +3244,17 @@ function tickUnitOrders(sim: MatchSim): void {
         return;
       }
       const inRange = !!(target && targetInWeaponRange(e, target, profile.range));
-      if (inRange && target) strikeTarget(sim, e, target, profile, dead);
-      const arrived = moveEntityToward(sim, e, ox, oz, profile.speed, 0.2);
+      if (inRange && target) {
+        holdApproach(e);
+        strikeTarget(sim, e, target, profile, dead);
+        // 원거리는 사거리에 들어오면 멈춰 쏜다. 근접은 맞닿은 채로 목적지로 간다.
+        if (!meleeAttacker(e.typeId)) {
+          clearNav(e);
+          replaceEntity(sim, e);
+          return;
+        }
+      }
+      const arrived = moveEntityToward(sim, e, ox, oz, profile.speed, 0.08);
       if (arrived && !inRange) clearOrder(e);
       replaceEntity(sim, e);
       return;
@@ -2851,6 +3263,7 @@ function tickUnitOrders(sim: MatchSim): void {
     clearOrder(e);
     replaceEntity(sim, e);
   });
+  tickDragoonBolts(sim, dead);
   let structureLost = false;
   for (let i = 0; i < dead.length; i++) {
     const id = dead[i];
@@ -2864,6 +3277,7 @@ function tickUnitOrders(sim: MatchSim): void {
     refreshOccupancy(sim);
     checkElimination(sim);
   }
+  applyRetaliations(sim);
 }
 
 function findHq(sim: MatchSim, side: Side): SimEntity | null {
@@ -3715,22 +4129,21 @@ function hasRallyPoint(e: SimEntity): boolean {
 
 /**
  * 생산 완료 스폰.
- * 전투 유닛: 랠리 있으면 그곳으로 이동 후 대기. 없으면 출구에서 대기.
- * 일꾼: 랠리 무시, 출구에서 대기.
+ * 그 건물에 랠리가 있으면 일꾼·전투 유닛 모두 그 점으로 이동한다.
+ * 랠리가 없으면 출구에서 대기한다. 다른 건물의 랠리는 쓰지 않는다.
  */
 function spawnProduced(sim: MatchSim, from: SimEntity, typeId: string): void {
   const def = unitDef(typeId);
   const hp = unitMaxHp(typeId);
   const spread = ((sim.nextId % 5) - 2) * 0.2;
   const gate = defaultSpawnPos(from, spread);
-  const isWorker = typeId.indexOf("worker") >= 0;
   // 생산 건물은 매 틱 replace 될 수 있어 최신 참조에서 랠리를 읽는다.
   const producer = sim.entities[from.id] || from;
   const rallyX = producer.rallyX;
   const rallyZ = producer.rallyZ;
   const hasRally = isFiniteNum(rallyX) && isFiniteNum(rallyZ);
-  const kind = isWorker ? "worker" : "unit";
-  if (!isWorker && hasRally) {
+  const kind = typeId.indexOf("worker") >= 0 ? "worker" : "unit";
+  if (hasRally) {
     spawn(sim, {
       kind: kind,
       side: from.side,

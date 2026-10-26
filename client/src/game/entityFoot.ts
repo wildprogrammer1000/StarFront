@@ -23,6 +23,8 @@ export function groundFoot(e: EntitySnap): { w: number; d: number } {
       return { w: 0.36, d: 0.36 };
     case "worker":
       return { w: 0.55, d: 0.55 };
+    case "bolt":
+      return { w: 0.5, d: 0.5 };
     default:
       if (e.typeId === "monster_blade") return { w: 0.38, d: 0.38 };
       if (e.typeId === "monster_hydra") return { w: 0.55, d: 0.55 };
@@ -49,8 +51,8 @@ export function attackerSpan(typeId: string): number {
 }
 
 /**
- * 선택 테두리가 맞출 칸 점유. 스프라이트 여백 없이 그리드 크기 그대로.
- * 유닛·일꾼·유충·알은 1칸.
+ * 건물·자원 선택 테두리가 맞출 칸 점유.
+ * 유닛·일꾼·유충·알은 스프라이트 크기(groundFoot)를 쓴다.
  */
 export function gridFoot(e: EntitySnap): { w: number; d: number } {
   switch (e.kind) {

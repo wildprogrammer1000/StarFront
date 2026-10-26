@@ -9,6 +9,11 @@ const sharedDir = path.resolve(repoRoot, "shared");
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    minify: "esbuild",
+    cssMinify: "esbuild",
+    sourcemap: false,
+  },
   resolve: {
     alias: {
       "@shared": sharedDir,

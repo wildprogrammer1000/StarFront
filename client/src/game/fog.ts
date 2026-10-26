@@ -194,7 +194,8 @@ export function fogRevealsEntity(
     e.kind === "worker" ||
     e.kind === "unit" ||
     e.kind === "larva" ||
-    e.kind === "egg"
+    e.kind === "egg" ||
+    e.kind === "bolt"
   ) {
     return isFogVisibleAtView(v.x, v.z);
   }

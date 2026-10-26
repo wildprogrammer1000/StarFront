@@ -652,6 +652,11 @@ export function createPlayCanvasApp(
     return (Math.atan2(v.x, v.z) * 180) / Math.PI;
   }
 
+  /** 용기병·대군주는 이동·조준과 상관없이 스프라이트 기본 방향을 유지한다. */
+  function locksFacing(typeId: string | undefined): boolean {
+    return typeId === "alien_dragoon" || typeId === "monster_sac";
+  }
+
   function syncMineralCargo(ent: pc.Entity, e: EntitySnap): void {
     const carrying = e.kind === "worker" && (e.carry || 0) > 0;
     let cargo: pc.Entity | null = null;
@@ -1102,14 +1107,26 @@ export function createPlayCanvasApp(
     }
   }
 
-  function entityIsMoving(e: EntitySnap): boolean {
-    // 채취·건설 중에는 idle 유지. 이동 애니메이션은 실제 이동만.
-    if (e.order === "move" || e.order === "attack_move") return true;
+  function bodyIsMoving(e: EntitySnap): boolean {
     const m = motions.get(e.id);
     if (!m) return false;
     const dx = m.toX - m.fromX;
     const dz = m.toZ - m.fromZ;
-    return dx * dx + dz * dz > 1e-5;
+    return dx * dx + dz * dz > 1e-4;
+  }
+
+  function entityIsMoving(e: EntitySnap): boolean {
+    // 채취·건설 중에는 idle 유지. 이동 애니메이션은 실제 이동만.
+    if (e.order === "move" || e.order === "attack_move") return true;
+    return bodyIsMoving(e);
+  }
+
+  /** 용기병 공격은 다리 벌린 정지 스프라이트. 걸어가는 공격이동만 이동 프레임. */
+  function dragoonAttackIdle(e: EntitySnap): boolean {
+    if (e.typeId !== "alien_dragoon") return false;
+    if (e.order === "attack") return true;
+    if (e.order !== "attack_move") return false;
+    return !bodyIsMoving(e);
   }
 
   function applyWalkSprite(ent: pc.Entity, id: string, typeId: string): void {
@@ -1142,6 +1159,11 @@ export function createPlayCanvasApp(
         walkApplied.get(e.id) === "alien_warp"
       ) {
         applyWalkSprite(ent, e.id, e.typeId);
+      }
+      if (dragoonAttackIdle(e)) {
+        walkStarted.delete(e.id);
+        applyWalkSprite(ent, e.id, e.typeId);
+        continue;
       }
       const frames = walkFrames(e.typeId);
       const atk = attackSprite(e.typeId);
@@ -1183,11 +1205,15 @@ export function createPlayCanvasApp(
       const z = m.fromZ + (m.toZ - m.fromZ) * a;
       const v = toView(x, z);
       ent.setPosition(v.x, m.y, v.z);
-      const look =
-        m.aimX != null && m.aimZ != null
-          ? yawFromDelta(m.aimX - x, m.aimZ - z)
-          : yawFromDelta(m.toX - m.fromX, m.toZ - m.fromZ);
-      if (look != null) m.yaw = look + m.yawOffset;
+      if (locksFacing(entityTypeIds.get(id))) {
+        m.yaw = 0;
+      } else {
+        const look =
+          m.aimX != null && m.aimZ != null
+            ? yawFromDelta(m.aimX - x, m.aimZ - z)
+            : yawFromDelta(m.toX - m.fromX, m.toZ - m.fromZ);
+        if (look != null) m.yaw = look + m.yawOffset;
+      }
       if (spriteEntityIds.has(id)) ent.setLocalEulerAngles(0, m.yaw, 0);
       if (u >= 1) {
         m.fromX = m.toX;
@@ -1221,13 +1247,14 @@ export function createPlayCanvasApp(
 
   /**
    * select_bracket.png(512)에서 ㄱ자 불투명 바깥 가장자리 비율.
-   * 평면 스케일 = 그리드 점유 / 이 값 → 테두리 바깥이 칸 경계에 맞는다.
+   * 평면 스케일 = 맞출 크기 / 이 값 → 테두리 바깥이 그 사각형에 맞는다.
+   * 유닛은 스프라이트 크기, 건물·자원은 칸 점유.
    */
   const BRACKET_OUTER_W = 456 / 512;
   const BRACKET_OUTER_D = 453 / 512;
   /**
-   * HP 비율로 색을 바꾼다. 초록(>66%) → 노랑(>33%) → 빨강(그 이하).
-   * 적·중립은 고정색.
+   * 아군 유닛은 초록 고정. 체력색은 적 선택(빨강)과 겹친다.
+   * 건물은 HP 비율(초록>66% → 노랑>33% → 빨강). 적·중립은 고정색.
    */
   const hpGreen = new pc.Color(0.49, 1, 0.29);
   const hpYellow = new pc.Color(0.98, 0.88, 0.2);
@@ -1457,6 +1484,12 @@ export function createPlayCanvasApp(
     if (neutral) return neutralBracket;
     const mine = localSide == null ? target.side === "bottom" : target.side === localSide;
     if (!mine) return enemyBracket;
+    const actor =
+      target.kind === "unit" ||
+      target.kind === "worker" ||
+      target.kind === "larva" ||
+      target.kind === "egg";
+    if (actor) return hpGreen;
     const max = Math.max(target.maxHp, 1);
     const ratio = Math.max(0, Math.min(1, target.hp / max));
     if (ratio > 0.66) return hpGreen;
@@ -1472,16 +1505,16 @@ export function createPlayCanvasApp(
       set.mat.emissive = color;
       set.mat.update();
     }
-    const foot = gridFoot(target);
-    const live = entityMap.get(target.id);
-    const v = live
-      ? { x: live.getPosition().x, z: live.getPosition().z }
-      : toView(target.x, target.z);
     const actor =
       target.kind === "unit" ||
       target.kind === "worker" ||
       target.kind === "larva" ||
       target.kind === "egg";
+    const foot = actor ? groundFoot(target) : gridFoot(target);
+    const live = entityMap.get(target.id);
+    const v = live
+      ? { x: live.getPosition().x, z: live.getPosition().z }
+      : toView(target.x, target.z);
     const y = actor ? ACTOR_Y + 0.08 : GROUND_Y + 0.22;
     set.plane.setLocalScale(
       foot.w / BRACKET_OUTER_W,
@@ -1724,7 +1757,11 @@ export function createPlayCanvasApp(
   }
 
   function entityY(e: EntitySnap, usesSprite: boolean, size: { h: number }): number {
-    const actor = e.kind === "unit" || e.kind === "worker" || e.kind === "larva";
+    const actor =
+      e.kind === "unit" ||
+      e.kind === "worker" ||
+      e.kind === "larva" ||
+      e.kind === "bolt";
     if (usesSprite) return actor ? ACTOR_Y : GROUND_Y + 0.08;
     return actor ? ACTOR_Y : GROUND_Y + size.h / 2;
   }
@@ -1834,9 +1871,15 @@ export function createPlayCanvasApp(
           mat.update();
         }
       }
+      if (e.kind === "bolt" && fresh && e.attackerId) {
+        attackPoseUntil.set(e.attackerId, now + ATTACK_POSE_SEC);
+      }
       if (usesSprite) {
         const movableSprite =
-          e.kind === "unit" || e.kind === "worker" || e.kind === "larva";
+          e.kind === "unit" ||
+          e.kind === "worker" ||
+          e.kind === "larva" ||
+          e.kind === "bolt";
         if (!movableSprite) ent.setLocalEulerAngles(0, 0, 0);
         ent.setLocalScale(foot.w, 1, foot.d);
       }
@@ -1857,7 +1900,10 @@ export function createPlayCanvasApp(
 
       const y = entityY(e, usesSprite, size);
       const movable =
-        e.kind === "unit" || e.kind === "worker" || e.kind === "larva";
+        e.kind === "unit" ||
+        e.kind === "worker" ||
+        e.kind === "larva" ||
+        e.kind === "bolt";
       if (!movable || fresh) {
         const v = toView(e.x, e.z);
         ent.setPosition(v.x, y, v.z);
@@ -1886,11 +1932,15 @@ export function createPlayCanvasApp(
       const yawOffset = 0;
       const aimX = typeof e.aimX === "number" ? e.aimX : null;
       const aimZ = typeof e.aimZ === "number" ? e.aimZ : null;
-      const face =
-        aimX != null && aimZ != null
-          ? yawFromDelta(aimX - e.x, aimZ - e.z)
-          : yawFromDelta(e.x - fromX, e.z - fromZ);
-      if (face != null) yaw = face + yawOffset;
+      if (locksFacing(e.typeId)) {
+        yaw = 0;
+      } else {
+        const face =
+          aimX != null && aimZ != null
+            ? yawFromDelta(aimX - e.x, aimZ - e.z)
+            : yawFromDelta(e.x - fromX, e.z - fromZ);
+        if (face != null) yaw = face + yawOffset;
+      }
       if (spriteEntityIds.has(e.id)) ent.setLocalEulerAngles(0, yaw, 0);
       motions.set(e.id, {
         fromX,

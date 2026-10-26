@@ -35,7 +35,6 @@ import {
   pushSnapshot,
   shouldMirrorToReact,
 } from "./game/snapshotStore";
-import { issueClientRallyOrders } from "./game/clientRally";
 import { formationPoints } from "./game/formation";
 import { MAX_SELECT } from "./game/pick";
 import { preloadBattleAssets } from "./game/sprites";
@@ -217,7 +216,6 @@ export default function App() {
   matchIdRef.current = matchId;
   const sessionUserIdRef = useRef<string>("");
   sessionUserIdRef.current = session?.user_id ?? "";
-  const seenEntityIdsRef = useRef<Set<string>>(new Set());
   const producedVoiceRef = useRef<Map<string, EntitySnap["kind"]>>(new Map());
   const prevMatchStatusRef = useRef<MatchSnapshot["status"] | undefined>(
     undefined
@@ -317,7 +315,6 @@ export default function App() {
         clearSnapshot();
         snapshotRef.current = null;
         setSnapshot(null);
-        seenEntityIdsRef.current = new Set();
         producedVoiceRef.current = new Map();
         resetBattleUi();
         setConn("in_match");
@@ -342,7 +339,6 @@ export default function App() {
       (prev === "countdown" || prev === "waiting" || prev === "ended")
     ) {
       if (prev === "countdown") playGameStart();
-      seenEntityIdsRef.current = new Set();
       resetBattleUi();
     }
   }, [snapshot?.status, resetBattleUi]);
@@ -389,12 +385,6 @@ export default function App() {
           const mid = matchIdRef.current;
           const uid = sessionUserIdRef.current;
           if (mid && uid) {
-            issueClientRallyOrders(snap, {
-              userId: uid,
-              matchId: mid,
-              seenIds: seenEntityIdsRef.current,
-              send: (id, input) => sendInputToRef.current?.(id, input),
-            });
             speakProducedUnits(snap, uid, producedVoiceRef.current);
           }
           const now = performance.now();
@@ -451,7 +441,6 @@ export default function App() {
     }
     setMatchId(null);
     matchIdRef.current = null;
-    seenEntityIdsRef.current = new Set();
     producedVoiceRef.current = new Map();
     clearSnapshot();
     snapshotRef.current = null;
@@ -813,8 +802,8 @@ export default function App() {
             sendInputTo(matchId, {
               type: "order_move",
               unitId: unitIds[i],
-              x: dests[i].x,
-              z: dests[i].z,
+              x: Number(x),
+              z: Number(z),
             });
           }
         }}
@@ -865,8 +854,8 @@ export default function App() {
             sendInputTo(matchId, {
               type: "order_attack_move",
               unitId: unitIds[i],
-              x: dests[i].x,
-              z: dests[i].z,
+              x: Number(x),
+              z: Number(z),
             });
           }
         }}
