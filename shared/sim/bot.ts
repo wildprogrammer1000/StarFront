@@ -17,9 +17,9 @@ const CONTACT = 3.5;
 
 export type BotDifficulty = "easy" | "normal" | "hard";
 
-/** 쉬움 4초, 보통 1.5초, 어려움 0.4초. 틱은 10Hz. */
+/** 쉬움 2초, 보통 1.5초, 어려움 0.4초. 틱은 10Hz. */
 export function thinkTicksFor(id: BotDifficulty): number {
-  if (id === "easy") return 40;
+  if (id === "easy") return 20;
   if (id === "hard") return 4;
   return THINK_TICKS;
 }
