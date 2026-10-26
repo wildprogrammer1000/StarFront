@@ -88,6 +88,12 @@ button.is-short {
     var(--shadow);
 }
 
+/* 아이폰 상태바·노치 아래로. absolute 자식은 부모 padding을 무시하므로 top으로 내린다. */
+.stage > .stage-canvas-wrap,
+.stage > .hud {
+  top: env(safe-area-inset-top, 0px);
+}
+
 /* 모바일: 스테이지를 뷰포트 전체로 써서 캔버스 가용 면적을 확보 */
 @media (max-width: 520px) {
   .stage {
@@ -687,7 +693,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   position: absolute;
   left: 12px;
   right: 12px;
-  top: calc(env(safe-area-inset-top, 0px) + 36px);
+  top: 36px;
   z-index: 3;
   margin: 0;
   padding: 8px 10px;
@@ -1222,10 +1228,7 @@ button.sel-multi-cell.is-pick:focus-visible {
 
 /* 로비 탭이 아닌 화면은 예전 HUD 여백을 내용에만 둔다. */
 .hud:not(.hud-game) .screen-fill:not(:has(.lobby-nav)) {
-  padding:
-    max(12px, env(safe-area-inset-top, 0px))
-    12px
-    max(14px, env(safe-area-inset-bottom, 0px));
+  padding: 12px 12px max(14px, env(safe-area-inset-bottom, 0px));
 }
 
 .screen-fill {
@@ -1318,10 +1321,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding:
-    max(12px, env(safe-area-inset-top, 0px))
-    12px
-    12px;
+  padding: 12px;
 }
 
 .battle-actions {
@@ -2874,16 +2874,17 @@ button.sel-multi-cell.is-pick:focus-visible {
   border-color: var(--phosphor-text);
 }
 
-/* 전투 종료 — 전장 위 풀스크린 오버레이 */
+/* 전투 종료. 캔버스와 같은 가로, 스테이지 세로 100%. 미니맵(z-index:4)보다 위. */
 .result-overlay {
   position: absolute;
-  inset: 0;
-  z-index: 30;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.72);
+  padding: 0;
+  background: #000000;
   pointer-events: auto;
   animation: sf-rise var(--dur) var(--ease);
 }
@@ -2891,14 +2892,28 @@ button.sel-multi-cell.is-pick:focus-visible {
 .result-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: min(100%, 320px);
-  padding: 20px 16px;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding:
+    max(24px, env(safe-area-inset-top, 0px))
+    20px
+    max(20px, env(safe-area-inset-bottom, 0px));
   background: var(--btn-bg);
-  border: 1px solid var(--btn-edge);
+  border: none;
   box-shadow: none;
   color: var(--btn-ink);
   pointer-events: auto;
+}
+
+.result-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  min-height: 0;
 }
 
 .result-panel.is-loss {
@@ -2928,13 +2943,69 @@ button.sel-multi-cell.is-pick:focus-visible {
   color: #ffb1a6;
 }
 
+.result-stats-block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .result-time {
-  margin: -4px 0 0;
-  text-align: center;
-  font-size: 14px;
+  margin: 6px 0 0;
+  text-align: right;
+  font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--btn-ink);
   opacity: 0.85;
+}
+
+.result-stats {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: var(--btn-ink);
+}
+
+.result-stats th,
+.result-stats td {
+  padding: 7px 2px;
+  border-bottom: 1px solid rgba(240, 210, 74, 0.18);
+  font-weight: 650;
+  text-align: center;
+  vertical-align: bottom;
+}
+
+.result-stats thead th {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.result-stats th:first-child {
+  text-align: left;
+  width: 4.5em;
+  max-width: 4.5em;
+}
+
+.result-stats tbody th {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.result-stat-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.result-stats td {
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
 }
 
 .stat-row {

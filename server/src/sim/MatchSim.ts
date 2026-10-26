@@ -59,6 +59,11 @@ export interface SimPlayer {
   minerals: number;
   ready: boolean;
   displayName?: string;
+  mineralsGained: number;
+  mineralsSpent: number;
+  etherGained: number;
+  etherSpent: number;
+  unitsMade: number;
 }
 
 interface SimEntity {
@@ -280,6 +285,11 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
       minerals: MINERAL.start,
       ready: false,
       displayName: name || undefined,
+      mineralsGained: 0,
+      mineralsSpent: 0,
+      etherGained: 0,
+      etherSpent: 0,
+      unitsMade: 0,
     };
     if (!sim.hostUserId) {
       sim.hostUserId = userId;
@@ -401,6 +411,11 @@ export function bindMatchSim(raw: MatchSim | Record<string, unknown>): MatchSim 
         supply: supply.used,
         supplyMax: supply.max,
         displayName: p.displayName || undefined,
+        mineralsGained: Math.floor(p.mineralsGained || 0),
+        mineralsSpent: Math.floor(p.mineralsSpent || 0),
+        etherGained: Math.floor(p.etherGained || 0),
+        etherSpent: Math.floor(p.etherSpent || 0),
+        unitsMade: Math.floor(p.unitsMade || 0),
       });
     });
 
@@ -1370,13 +1385,46 @@ function spawnConstructing(
  * 일꾼이 건설 지점에 도착한 뒤 명령을 실행한다.
  * morph: 일벌레 소모 후 건설. worker: 그 자리에서 건설. warp: 건물 소환 후 일꾼 해제.
  */
+function spendCost(player: SimPlayer, minerals: number, ether: number): void {
+  player.minerals -= minerals;
+  player.energy -= ether;
+  if (minerals > 0) player.mineralsSpent = (player.mineralsSpent || 0) + minerals;
+  if (ether > 0) player.etherSpent = (player.etherSpent || 0) + ether;
+}
+
+function refundCost(player: SimPlayer, minerals: number, ether: number): void {
+  const room = Math.max(0, ENERGY.max - player.energy);
+  const etherBack = ether < room ? ether : room;
+  player.energy += etherBack;
+  player.minerals += minerals;
+  player.mineralsSpent = Math.max(0, (player.mineralsSpent || 0) - minerals);
+  player.etherSpent = Math.max(0, (player.etherSpent || 0) - etherBack);
+}
+
+function depositCarry(player: SimPlayer, carry: number, gas: boolean): void {
+  if (carry <= 0) return;
+  if (gas) {
+    player.energy += carry;
+    player.etherGained = (player.etherGained || 0) + carry;
+    return;
+  }
+  player.minerals += carry;
+  player.mineralsGained = (player.mineralsGained || 0) + carry;
+}
+
+function noteUnitsMade(sim: MatchSim, side: Side, count: number): void {
+  if (count <= 0) return;
+  const owner = findPlayerBySide(sim, side);
+  if (!owner) return;
+  owner.unitsMade = (owner.unitsMade || 0) + count;
+}
+
 function payForBuilding(sim: MatchSim, side: Side, typeId: string): boolean {
   const def = buildingDef(typeId);
   const owner = findPlayerBySide(sim, side);
   if (!def || !owner) return false;
   if (owner.energy < def.costE || owner.minerals < def.costM) return false;
-  owner.energy -= def.costE;
-  owner.minerals -= def.costM;
+  spendCost(owner, def.costM, def.costE);
   return true;
 }
 
@@ -3658,10 +3706,7 @@ function tickGasHarvest(sim: MatchSim, e: SimEntity, hq: SimEntity | null): void
       return;
     }
     const owner = findPlayerBySide(sim, e.side);
-    if (owner && (e.carry || 0) > 0) {
-      if (e.carryKind === "gas") owner.energy += e.carry || 0;
-      else owner.minerals += e.carry || 0;
-    }
+    if (owner) depositCarry(owner, e.carry || 0, e.carryKind === "gas");
     e.carry = 0;
     delete e.carryKind;
     if (ready && building && ventUnder(sim, building)) {
@@ -3740,10 +3785,7 @@ function tickHarvest(sim: MatchSim): void {
       const arrived = moveWorkerToward(sim, e, hq.x, hq.z, WORKER_STOP.hq);
       if (!arrived) return;
       const owner = findPlayerBySide(sim, e.side);
-      if (owner && (e.carry || 0) > 0) {
-        if (e.carryKind === "gas") owner.energy += e.carry || 0;
-        else owner.minerals += e.carry || 0;
-      }
+      if (owner) depositCarry(owner, e.carry || 0, e.carryKind === "gas");
       e.carry = 0;
       delete e.carryKind;
       if (mineral && mineral.kind === "mineral" && mineral.hp > 0) {
@@ -4055,6 +4097,7 @@ function hatchEgg(sim: MatchSim, egg: SimEntity): void {
     twin.hatchOf = egg.id;
     replaceEntity(sim, twin);
   }
+  noteUnitsMade(sim, side, count);
   if (hq) hq.larva = countLarvaHome(sim, hq);
 }
 
@@ -4066,10 +4109,7 @@ function cancelMorph(
   const egg = sim.entities[eggId];
   if (!egg || egg.kind !== "egg" || egg.side !== player.side) return;
   const def = egg.morphType ? unitDef(egg.morphType) : null;
-  if (def) {
-    player.energy = Math.min(ENERGY.max, player.energy + def.costE);
-    player.minerals += def.costM;
-  }
+  if (def) refundCost(player, def.costM, def.costE);
   // SC1: 취소 시 알(유충) 파괴 — 유충 복구 없음
   delete sim.entities[eggId];
   const home = egg.homeId ? sim.entities[egg.homeId] : hatcheryOf(sim, player.side);
@@ -4156,6 +4196,7 @@ function spawnProduced(sim: MatchSim, from: SimEntity, typeId: string): void {
       orderX: rallyX,
       orderZ: rallyZ,
     });
+    noteUnitsMade(sim, from.side, 1);
     return;
   }
   spawn(sim, {
@@ -4167,6 +4208,7 @@ function spawnProduced(sim: MatchSim, from: SimEntity, typeId: string): void {
     hp: def ? hp : 40,
     maxHp: hp,
   });
+  noteUnitsMade(sim, from.side, 1);
 }
 
 function enqueueUnit(
@@ -4199,8 +4241,7 @@ function enqueueUnit(
       const supply = supplyState(sim, player);
       if (supply.used + def.supply > supply.max) break;
       if (player.energy < def.costE || player.minerals < def.costM) break;
-      player.energy -= def.costE;
-      player.minerals -= def.costM;
+      spendCost(player, def.costM, def.costE);
       beginMorph(sim, larva, unitType, def.time);
     }
     return;
@@ -4217,8 +4258,7 @@ function enqueueUnit(
   const queue = copyStrArr(source.queue);
   if (queue.length >= 5) return;
   queue.push(unitType);
-  player.energy -= def.costE;
-  player.minerals -= def.costM;
+  spendCost(player, def.costM, def.costE);
   // 반드시 새 배열을 필드에 재할당 (Goja에서 in-place push는 유실됨)
   source.queue = queue;
   if (queue.length === 1) source.prodLeft = def.time;
@@ -4248,8 +4288,7 @@ function cancelQueue(
     source.prodLeft = next ? next.time : 0;
   }
   if (!def) return;
-  player.energy = Math.min(ENERGY.max, player.energy + def.costE);
-  player.minerals += def.costM;
+  refundCost(player, def.costM, def.costE);
 }
 
 function canProduce(

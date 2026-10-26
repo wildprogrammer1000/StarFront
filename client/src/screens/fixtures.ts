@@ -7,6 +7,11 @@ export const previewMe: PlayerSnap = {
   race: "human",
   energy: 6.4,
   minerals: 86,
+  mineralsGained: 480,
+  mineralsSpent: 320,
+  etherGained: 120,
+  etherSpent: 80,
+  unitsMade: 14,
 };
 
 export const previewEnemy: PlayerSnap = {
@@ -16,6 +21,11 @@ export const previewEnemy: PlayerSnap = {
   race: "monster",
   energy: 3.2,
   minerals: 40,
+  mineralsGained: 360,
+  mineralsSpent: 300,
+  etherGained: 40,
+  etherSpent: 50,
+  unitsMade: 11,
 };
 
 /** HALF_D=14 (맵 깊이 112칸) 기준 — 서버 bootstrapWorld 와 동일 스케일 */

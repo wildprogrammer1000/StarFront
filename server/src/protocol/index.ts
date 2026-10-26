@@ -110,6 +110,16 @@ export interface PlayerSnap {
   supplyMax?: number;
   /** 계정 표시 이름 */
   displayName?: string;
+  /** 채집으로 얻은 미네랄 합 */
+  mineralsGained?: number;
+  /** 건설·생산에 쓴 미네랄 합. 취소 환불은 빠진다. */
+  mineralsSpent?: number;
+  /** 채집으로 얻은 에테르 합 */
+  etherGained?: number;
+  /** 건설·생산에 쓴 에테르 합. 취소 환불은 빠진다. */
+  etherSpent?: number;
+  /** 생산이 끝난 유닛·일꾼 수. 시작 일꾼은 빠진다. */
+  unitsMade?: number;
 }
 
 export type MatchStatus = "waiting" | "countdown" | "playing" | "ended";

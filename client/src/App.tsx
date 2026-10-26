@@ -551,7 +551,6 @@ export default function App() {
       <ResultScreen
         me={previewMe}
         enemy={previewEnemy}
-        entities={previewEntities}
         winnerSide="bottom"
         playSec={754}
         onLobby={() => undefined}
@@ -579,7 +578,6 @@ export default function App() {
       <ResultScreen
         me={me}
         enemy={resultEnemy}
-        entities={snapshot.entities}
         winnerSide={snapshot.winnerSide}
         playSec={snapshot.playSec}
         onLobby={() => void leaveToLobby()}
