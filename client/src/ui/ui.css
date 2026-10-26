@@ -5,23 +5,27 @@
 html,
 body {
   margin: 0;
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   background-color: #05070a;
 }
 
 #root {
-  position: sticky;
-  top: 0;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  height: 100dvh;
   margin: 0;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   overflow: hidden;
+  overscroll-behavior: none;
   background-color: #05070a;
 }
 
@@ -296,7 +300,9 @@ button.is-short {
   padding-bottom: var(--stage-bottom-safe);
   max-height: none;
   overflow: hidden;
+  overscroll-behavior: none;
   pointer-events: auto;
+  touch-action: none;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1130,6 +1136,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   gap: 8px;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior: contain;
   touch-action: none;
   cursor: grab;
   scrollbar-width: none;
@@ -1297,6 +1304,8 @@ button.sel-multi-cell.is-pick:focus-visible {
   display: flex;
   flex-direction: column;
   overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .lobby-dock {
@@ -1425,6 +1434,8 @@ button.sel-multi-cell.is-pick:focus-visible {
   background: transparent;
   box-shadow: none;
   border-top: 0;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .lobby-nav-item {
@@ -1657,6 +1668,8 @@ button.sel-multi-cell.is-pick:focus-visible {
 .bnet-rows {
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   min-height: 72px;
   max-height: 180px;
 }
@@ -2054,6 +2067,8 @@ button.sel-multi-cell.is-pick:focus-visible {
   gap: 6px;
   max-height: 160px;
   overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   background: var(--btn-bg);
   border: 1px solid var(--btn-edge);
   color: var(--btn-ink);
@@ -2453,6 +2468,8 @@ button.sel-multi-cell.is-pick:focus-visible {
   display: flex;
   gap: 6px;
   overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x;
 }
 
 .chip {
