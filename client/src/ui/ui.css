@@ -1420,7 +1420,7 @@ button.sel-multi-cell.is-pick:focus-visible {
   padding: 0;
   background: transparent;
   box-shadow: none;
-  border-top: 1px solid var(--phosphor);
+  border-top: 0;
 }
 
 .lobby-nav-item {
