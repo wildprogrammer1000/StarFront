@@ -10,28 +10,6 @@ body {
   background-color: #05070a;
 }
 
-/* iOS 26 이후 홈 화면 웹앱은 상태바 뒤를 시스템 블러로 덮는다.
-   theme-color·상태바 메타·absolute 배경은 샘플되지 않는다.
-   화면 맨 위 4px 안의 fixed/sticky, 높이 6px 이상, 너비 80% 이상, 불투명 background-color만 단색으로 바꾼다.
-   html/body의 overflow:hidden은 그 막을 샘플 창 밖으로 밀어 낸다. */
-.ios-status-solid {
-  display: none;
-}
-
-@media (display-mode: standalone) {
-  .ios-status-solid {
-    display: block;
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 80;
-    width: 100%;
-    height: max(env(safe-area-inset-top, 0px), 12px);
-    background-color: #05070a;
-    pointer-events: none;
-  }
-}
-
 #root {
   position: sticky;
   top: 0;
